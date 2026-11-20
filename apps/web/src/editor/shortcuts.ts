@@ -1,0 +1,47 @@
+export type ShortcutDefinition = {
+	keys: string[];
+	label: string;
+	group: "Tools" | "FreeForm" | "Edit" | "Layers" | "View";
+};
+
+export const SHORTCUTS: ShortcutDefinition[] = [
+	{ keys: ["V"], label: "Select tool", group: "Tools" },
+	{ keys: ["H"], label: "Hand tool (or hold Space)", group: "Tools" },
+	{ keys: ["B"], label: "Brush", group: "Tools" },
+	{ keys: ["E"], label: "Eraser", group: "Tools" },
+	{ keys: ["T"], label: "Add text", group: "Tools" },
+	{ keys: ["C"], label: "Crop selected image", group: "Tools" },
+	{ keys: ["["], label: "Decrease brush size", group: "Tools" },
+	{ keys: ["]"], label: "Increase brush size", group: "Tools" },
+	{ keys: ["F"], label: "Frame tool (FreeForm)", group: "FreeForm" },
+	{ keys: ["R"], label: "Rectangle tool", group: "FreeForm" },
+	{ keys: ["O"], label: "Ellipse tool", group: "FreeForm" },
+	{ keys: ["L"], label: "Line tool", group: "FreeForm" },
+	{ keys: ["T"], label: "Text tool (click to place)", group: "FreeForm" },
+	{ keys: ["Shift", "1"], label: "Zoom to fit all", group: "FreeForm" },
+	{ keys: ["Shift", "2"], label: "Zoom to selection", group: "FreeForm" },
+	{ keys: ["Ctrl", "Shift", "K"], label: "Place image", group: "FreeForm" },
+	{ keys: ["Ctrl", "Z"], label: "Undo", group: "Edit" },
+	{ keys: ["Ctrl", "Shift", "Z"], label: "Redo", group: "Edit" },
+	{ keys: ["Ctrl", "C"], label: "Copy", group: "Edit" },
+	{ keys: ["Ctrl", "X"], label: "Cut", group: "Edit" },
+	{ keys: ["Ctrl", "V"], label: "Paste layers or images", group: "Edit" },
+	{ keys: ["Ctrl", "D"], label: "Duplicate", group: "Edit" },
+	{ keys: ["Delete"], label: "Delete selection", group: "Edit" },
+	{ keys: ["Ctrl", "A"], label: "Select all", group: "Edit" },
+	{ keys: ["Esc"], label: "Deselect / cancel", group: "Edit" },
+	{ keys: ["Arrows"], label: "Nudge 1px (Shift: 10px)", group: "Edit" },
+	{ keys: ["Shift", "H"], label: "Flip horizontal", group: "Edit" },
+	{ keys: ["Shift", "V"], label: "Flip vertical", group: "Edit" },
+	{ keys: ["Ctrl", "]"], label: "Bring forward", group: "Layers" },
+	{ keys: ["Ctrl", "["], label: "Send backward", group: "Layers" },
+	{ keys: ["Ctrl", "Shift", "]"], label: "Bring to front", group: "Layers" },
+	{ keys: ["Ctrl", "Shift", "["], label: "Send to back", group: "Layers" },
+	{ keys: ["Ctrl", "L"], label: "Lock / unlock", group: "Layers" },
+	{ keys: ["Ctrl", "Shift", "H"], label: "Hide / show", group: "Layers" },
+	{ keys: ["Ctrl", "+"], label: "Zoom in", group: "View" },
+	{ keys: ["Ctrl", "-"], label: "Zoom out", group: "View" },
+	{ keys: ["Ctrl", "0"], label: "Zoom to fit", group: "View" },
+	{ keys: ["Ctrl", "1"], label: "Zoom to 100%", group: "View" },
+	{ keys: ["Ctrl", "E"], label: "Export", group: "View" },
+];

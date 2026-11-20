@@ -1,0 +1,13 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+node_modules
+.turbo
+
+.env*
+!*.env.example
+
+bun.lockb
+
+.next
+.open-next
+*.tsbuildinfo

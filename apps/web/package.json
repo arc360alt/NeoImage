@@ -1,0 +1,53 @@
+{
+  "name": "@openimage/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "check-types": "tsc --noEmit",
+    "format": "prettier src --write"
+  },
+  "dependencies": {
+    "@hugeicons/core-free-icons": "^3.3.0",
+    "@hugeicons/react": "^1.1.6",
+    "@huggingface/transformers": "^3.8.1",
+    "@radix-ui/react-separator": "^1.1.8",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "culori": "^4.0.2",
+    "fflate": "^0.8.3",
+    "idb": "^8.0.3",
+    "konva": "^10.0.2",
+    "lucide-react": "^0.562.0",
+    "motion": "^12.18.1",
+    "nanoid": "^5.1.5",
+    "next": "16.1.3",
+    "next-themes": "^0.4.4",
+    "radix-ui": "^1.4.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-icons": "^5.4.0",
+    "react-konva": "^19.0.10",
+    "react-markdown": "^10.1.0",
+    "react-resizable-panels": "^2.1.7",
+    "sonner": "^1.7.1",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss-animate": "^1.0.7",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.1",
+    "@tailwindcss/typography": "^0.5.19",
+    "@types/bun": "latest",
+    "@types/culori": "^4.0.1",
+    "@types/node": "^24.2.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "postcss": "^8",
+    "sharp": "^0.34.5",
+    "tailwindcss": "^4.2.1",
+    "typescript": "^5.8.3"
+  }
+}
