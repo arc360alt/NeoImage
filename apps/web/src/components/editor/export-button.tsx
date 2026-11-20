@@ -25,11 +25,14 @@ import {
 import { cn } from "@/utils/ui";
 import { useEditorStore } from "@/editor/store";
 import {
-	type ExportFormat,
+	type ExportFormat as RasterFormat,
 	dataUrlToBlob,
 	downloadDataUrl,
 	renderArtboard,
 } from "@/editor/stage";
+import { artboardToSvg, svgBlob } from "@/editor/svg-export";
+
+type ExportFormat = RasterFormat | "svg";
 import { exportLayers, settingsFor } from "@/editor/export";
 
 export const useExportDialogStore = create<{
@@ -41,6 +44,7 @@ const FORMATS: { value: ExportFormat; label: string }[] = [
 	{ value: "png", label: "PNG - Best quality, supports transparency" },
 	{ value: "jpeg", label: "JPEG - Smallest file size" },
 	{ value: "webp", label: "WebP - Modern, small and sharp" },
+	{ value: "svg", label: "SVG - Vector, editable, any size" },
 ];
 
 const SCALES = [0.5, 1, 2, 3];
@@ -185,21 +189,25 @@ function ArtboardExportPopover({ onDone }: { onDone: () => void }) {
 	const outHeight = Math.round(doc.canvas.height * scale);
 	const supportsAlpha = format !== "jpeg";
 
-	const render = () =>
-		renderArtboard({
-			scale,
-			format,
-			quality: quality / 100,
-			transparent: supportsAlpha && transparent,
-		});
-
 	const handleExport = async () => {
 		setIsExporting(true);
 		try {
-			const dataUrl = await render();
 			const ext = format === "jpeg" ? "jpg" : format;
 			const safeName = doc.name.replace(/[^\w\- ]+/g, "").trim() || "neoimage";
-			downloadDataUrl(dataUrl, `${safeName}.${ext}`);
+			if (format === "svg") {
+				const svg = await artboardToSvg({ scale, transparent });
+				const url = URL.createObjectURL(svgBlob(svg));
+				downloadDataUrl(url, `${safeName}.svg`);
+				setTimeout(() => URL.revokeObjectURL(url), 10_000);
+			} else {
+				const dataUrl = await renderArtboard({
+					scale,
+					format,
+					quality: quality / 100,
+					transparent: supportsAlpha && transparent,
+				});
+				downloadDataUrl(dataUrl, `${safeName}.${ext}`);
+			}
 			toast.success("Export complete", {
 				description: `${outWidth} × ${outHeight} ${format.toUpperCase()}`,
 			});
@@ -281,7 +289,7 @@ function ArtboardExportPopover({ onDone }: { onDone: () => void }) {
 						</SectionContent>
 					</Section>
 
-					{format !== "png" && (
+					{(format === "jpeg" || format === "webp") && (
 						<Section collapsible defaultOpen sectionKey="export-quality">
 							<SectionHeader>
 								<SectionTitle>Quality</SectionTitle>

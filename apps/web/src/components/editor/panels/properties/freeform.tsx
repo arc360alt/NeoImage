@@ -47,6 +47,7 @@ const FORMATS: { value: ExportFormat; label: string }[] = [
 	{ value: "png", label: "PNG" },
 	{ value: "jpeg", label: "JPG" },
 	{ value: "webp", label: "WEBP" },
+	{ value: "svg", label: "SVG" },
 ];
 
 /* --------------------------------- Frame --------------------------------- */

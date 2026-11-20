@@ -26,7 +26,7 @@ Everything else works in both:
 - **Tools**: move/resize/rotate with snapping guides, marquee selection, crop with aspect presets, flip, align & distribute, brush/highlighter/eraser
 - **AI background removal**: runs on-device with [Transformers.js](https://huggingface.co/docs/transformers.js) (RMBG-1.4); images are never uploaded
 - **Stock photos**: [Pexels](https://www.pexels.com/api/) when an API key is set, otherwise featured photos from [Lorem Picsum](https://picsum.photos)
-- **Export**: PNG, JPEG or WebP at 0.5x–3x, optional transparent background, or copy to clipboard
+- **Export**: PNG, JPEG or WebP at 0.5x–3x, optional transparent background, or copy to clipboard. **SVG** export writes real vector shapes, editable text, gradients, clipping and masks (photos are embedded as-is)
 - Undo/redo, autosave, keyboard shortcuts, light and dark themes
 
 ## Project Structure

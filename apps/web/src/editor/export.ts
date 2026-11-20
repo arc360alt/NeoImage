@@ -2,9 +2,10 @@ import { zipSync } from "fflate";
 import { createExportSetting } from "./defaults";
 import { dataUrlToBlob, renderLayer } from "./stage";
 import { getEditor } from "./store";
+import { layerToSvg, svgBlob } from "./svg-export";
 import type { ExportSetting, Layer } from "./types";
 
-const EXT = { png: "png", jpeg: "jpg", webp: "webp" } as const;
+const EXT = { png: "png", jpeg: "jpg", webp: "webp", svg: "svg" } as const;
 
 export function settingsFor(layer: Layer): ExportSetting[] {
 	return layer.exportSettings?.length ? layer.exportSettings : [createExportSetting()];
@@ -43,17 +44,18 @@ export async function exportLayers(
 		const layer = doc.layers.find((l) => l.id === id);
 		if (!layer) continue;
 		for (const setting of settingsFor(layer)) {
-			const dataUrl = await renderLayer({
-				layerId: id,
-				scale: setting.scale,
-				format: setting.format,
-			});
+			const blob =
+				setting.format === "svg"
+					? svgBlob(await layerToSvg(id, { scale: setting.scale }))
+					: dataUrlToBlob(
+							await renderLayer({ layerId: id, scale: setting.scale, format: setting.format }),
+						);
 			let name = fileNameFor(layer, setting);
 			// Keep names unique inside the zip ("Frame 1.png", "Frame 1 (2).png").
 			const count = used.get(name) ?? 0;
 			used.set(name, count + 1);
 			if (count > 0) name = name.replace(/(\.\w+)$/, ` (${count + 1})$1`);
-			files.push({ name, blob: dataUrlToBlob(dataUrl) });
+			files.push({ name, blob });
 		}
 	}
 	if (files.length === 0) return 0;

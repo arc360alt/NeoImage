@@ -57,7 +57,8 @@ export type Fill =
 	| { type: "radial"; stops: GradientStop[] }
 	| { type: "transparent" };
 
-export type ExportFormat = "png" | "jpeg" | "webp";
+/** "svg" is a true vector export (see editor/svg-export.ts). */
+export type ExportFormat = "png" | "jpeg" | "webp" | "svg";
 
 /** One export row, like Figma's export settings ("2x PNG"). */
 export type ExportSetting = {
