@@ -31,9 +31,9 @@ const entries: Omit<ChangelogEntry, "isLatest">[] = [
 	{
 		version: "0.1.0",
 		date: "2026-11-05",
-		title: "Hello, OpenImage",
+		title: "Hello, NeoImage",
 		description:
-			"The first public beta of OpenImage: a free, open-source photo editor and design tool that runs entirely in your browser.",
+			"The first public beta of NeoImage: a free, open-source photo editor and design tool that runs entirely in your browser.",
 		summary:
 			"Layers, filters, text, shapes, templates, brush, crop and AI background removal.",
 		content: "",

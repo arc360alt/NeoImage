@@ -69,7 +69,7 @@ const roadmapItems: RoadmapItem[] = [
 	{
 		title: "Native app (mobile/desktop)",
 		description:
-			"Native OpenImage apps for Mac, Windows, Linux, and iOS/Android.",
+			"Native NeoImage apps for Mac, Windows, Linux, and iOS/Android.",
 		status: {
 			text: "Not started",
 			type: "default",
@@ -78,28 +78,28 @@ const roadmapItems: RoadmapItem[] = [
 ];
 
 export const metadata: Metadata = {
-	title: "Roadmap - OpenImage",
+	title: "Roadmap - NeoImage",
 	description:
-		"See what's coming next for OpenImage - the free, open-source photo editor that respects your privacy.",
+		"See what's coming next for NeoImage - the free, open-source photo editor that respects your privacy.",
 	openGraph: {
-		title: "OpenImage Roadmap - What's Coming Next",
+		title: "NeoImage Roadmap - What's Coming Next",
 		description:
-			"See what's coming next for OpenImage - the free, open-source photo editor that respects your privacy.",
+			"See what's coming next for NeoImage - the free, open-source photo editor that respects your privacy.",
 		type: "website",
 		images: [
 			{
 				url: "/open-graph/default.png",
 				width: 1200,
 				height: 630,
-				alt: "OpenImage Roadmap",
+				alt: "NeoImage Roadmap",
 			},
 		],
 	},
 	twitter: {
 		card: "summary_large_image",
-		title: "OpenImage Roadmap - What's Coming Next",
+		title: "NeoImage Roadmap - What's Coming Next",
 		description:
-			"See what's coming next for OpenImage - the free, open-source photo editor that respects your privacy.",
+			"See what's coming next for NeoImage - the free, open-source photo editor that respects your privacy.",
 		images: ["/open-graph/default.png"],
 	},
 };
@@ -108,7 +108,7 @@ export default function RoadmapPage() {
 	return (
 		<BasePage
 			title="Roadmap"
-			description={`What's coming next for OpenImage (last updated: ${LAST_UPDATED})`}
+			description={`What's coming next for NeoImage (last updated: ${LAST_UPDATED})`}
 		>
 			<div className="mx-auto flex max-w-4xl flex-col gap-16">
 				<div className="flex flex-col gap-6">
@@ -118,7 +118,7 @@ export default function RoadmapPage() {
 				</div>
 				<GitHubContributeSection
 					title="Want to help?"
-					description="OpenImage is open source and built by the community. Every contribution,
+					description="NeoImage is open source and built by the community. Every contribution,
           no matter how small, helps us build the best free photo editor
           possible."
 				/>

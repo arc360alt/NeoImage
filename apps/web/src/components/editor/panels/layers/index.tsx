@@ -43,7 +43,7 @@ import { frameRect } from "@/editor/freeform";
 
 type DropPosition = "above" | "below" | "inside";
 
-const LAYER_DRAG_MIME = "application/x-openimage-layer";
+const LAYER_DRAG_MIME = "application/x-neoimage-layer";
 
 export function LayersPanel({ variant = "list" }: { variant?: "list" | "tree" }) {
 	const layers = useEditorStore((s) => s.doc?.layers ?? EMPTY);

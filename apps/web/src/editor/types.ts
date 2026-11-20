@@ -154,6 +154,21 @@ export type DrawingLayer = LayerBase & {
 	strokes: BrushStroke[];
 };
 
+/** Figma-style layout grid drawn over a frame (editor only, never exported). */
+export type LayoutGrid = {
+	id: string;
+	type: "grid" | "columns" | "rows";
+	visible: boolean;
+	color: string;
+	opacity: number; // 0..1
+	/** Cell size for "grid". */
+	size: number;
+	/** Number of columns / rows. */
+	count: number;
+	gutter: number;
+	margin: number;
+};
+
 /** FreeForm mode: a Figma-style frame that clips the layers inside it. */
 export type FrameLayer = LayerBase & {
 	type: "frame";
@@ -163,6 +178,7 @@ export type FrameLayer = LayerBase & {
 	stroke: Stroke;
 	cornerRadius: number;
 	clipContent: boolean;
+	layoutGrids?: LayoutGrid[];
 };
 
 export type Layer = ImageLayer | TextLayer | ShapeLayer | DrawingLayer | FrameLayer;

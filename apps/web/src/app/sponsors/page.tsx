@@ -10,13 +10,13 @@ import { cn } from "@/utils/ui";
 import { SOCIAL_LINKS } from "@/site/social";
 
 export const metadata: Metadata = {
-	title: "Sponsors - OpenImage",
+	title: "Sponsors - NeoImage",
 	description:
-		"Support OpenImage and help us build the future of free and open-source photo editing.",
+		"Support NeoImage and help us build the future of free and open-source photo editing.",
 	openGraph: {
-		title: "Sponsors - OpenImage",
+		title: "Sponsors - NeoImage",
 		description:
-			"Support OpenImage and help us build the future of free and open-source photo editing.",
+			"Support NeoImage and help us build the future of free and open-source photo editing.",
 		type: "website",
 	},
 };
@@ -29,7 +29,7 @@ export default function SponsorsPage() {
 					Sponsors
 				</h1>
 				<p className="text-muted-foreground mx-auto max-w-2xl text-xl leading-relaxed text-pretty">
-					Support OpenImage and help us build the future of privacy-first photo
+					Support NeoImage and help us build the future of privacy-first photo
 					editing.
 				</p>
 			</div>
@@ -45,7 +45,7 @@ function SponsorsGrid() {
 				<CardContent className="flex flex-col items-center gap-4 p-10 text-center">
 					<h3 className="text-xl font-semibold">Become our first sponsor</h3>
 					<p className="text-muted-foreground max-w-md">
-						OpenImage is free and open source. Sponsorships keep it that way and
+						NeoImage is free and open source. Sponsorships keep it that way and
 						help fund new tools like smarter selections and AI retouching.
 					</p>
 					<Link

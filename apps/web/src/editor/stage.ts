@@ -158,6 +158,13 @@ async function renderRegion({
 			}
 		}
 	}
+	// Editor-only helpers inside frames (layout grids) never appear in exports.
+	for (const node of group.find<Konva.Node>(".editor-only")) {
+		if (node.visible()) {
+			node.visible(false);
+			hidden.push(node);
+		}
+	}
 	const filtered = group.find<Konva.Node>(".filtered");
 	for (const node of filtered) node.cache({ pixelRatio: Math.max(1, scale) });
 	const wasUiVisible = ui?.visible() ?? false;

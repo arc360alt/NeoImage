@@ -61,7 +61,7 @@ const og = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" hei
 <rect width="1200" height="630" fill="url(#a)"/>
 <rect width="1200" height="630" fill="url(#b)"/>
 <g transform="translate(330 235) scale(5)">${SYMBOL}</g>
-<text x="520" y="350" fill="white" font-family="Inter, Helvetica, Arial, sans-serif" font-size="110" font-weight="700" letter-spacing="-4">OpenImage</text>
+<text x="520" y="350" fill="white" font-family="Inter, Helvetica, Arial, sans-serif" font-size="110" font-weight="700" letter-spacing="-4">NeoImage</text>
 <text x="715" y="470" text-anchor="middle" fill="#a3a3a3" font-family="Inter, Helvetica, Arial, sans-serif" font-size="34">The open source photo editor</text>
 </svg>`);
 mkdirSync(join(PUBLIC, "open-graph"), { recursive: true });

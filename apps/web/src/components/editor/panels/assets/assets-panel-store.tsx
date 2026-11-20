@@ -70,7 +70,7 @@ export const useAssetsPanelStore = create<AssetsPanelStore>()(
 			setMediaViewMode: (mode) => set({ mediaViewMode: mode }),
 		}),
 		{
-			name: "openimage-assets-panel",
+			name: "neoimage-assets-panel",
 			partialize: (state) => ({
 				activeTab: state.activeTab,
 				mediaViewMode: state.mediaViewMode,

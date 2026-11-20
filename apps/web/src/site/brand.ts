@@ -2,7 +2,7 @@ export const SITE_URL =
 	process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
 export const SITE_INFO = {
-	title: "OpenImage",
+	title: "NeoImage",
 	description:
 		"A simple but powerful photo editor and design tool. Layers, filters, text and more. In your browser.",
 	url: SITE_URL,
@@ -11,4 +11,4 @@ export const SITE_INFO = {
 	favicon: "/favicon.ico",
 };
 
-export const DEFAULT_LOGO_URL = "/logos/openimage/svg/logo.svg";
+export const DEFAULT_LOGO_URL = "/logos/neoimage/svg/logo.svg";

@@ -48,18 +48,18 @@ const ASSET_SECTIONS: AssetSection[] = [
 	{
 		title: "Symbol",
 		description:
-			"Use the symbol on its own when the OpenImage name is already present nearby or space is limited.",
+			"Use the symbol on its own when the NeoImage name is already present nearby or space is limited.",
 		cols: "2",
 		assets: [
 			{
-				src: "/logos/openimage/symbol.svg",
+				src: "/logos/neoimage/symbol.svg",
 				theme: "dark",
 				label: "Symbol",
 				width: 400,
 				height: 400,
 			},
 			{
-				src: "/logos/openimage/symbol-light.svg",
+				src: "/logos/neoimage/symbol-light.svg",
 				theme: "light",
 				label: "Symbol",
 				width: 400,
@@ -74,28 +74,28 @@ const ASSET_SECTIONS: AssetSection[] = [
 		cols: "2",
 		assets: [
 			{
-				src: "/logos/openimage/logo.svg",
+				src: "/logos/neoimage/logo.svg",
 				theme: "dark",
 				label: "Logo",
 				width: 1809,
 				height: 400,
 			},
 			{
-				src: "/logos/openimage/logo-light.svg",
+				src: "/logos/neoimage/logo-light.svg",
 				theme: "light",
 				label: "Logo",
 				width: 1809,
 				height: 400,
 			},
 			{
-				src: "/logos/openimage/text.svg",
+				src: "/logos/neoimage/text.svg",
 				theme: "dark",
 				label: "Text",
 				width: 1760,
 				height: 400,
 			},
 			{
-				src: "/logos/openimage/text-light.svg",
+				src: "/logos/neoimage/text-light.svg",
 				theme: "light",
 				label: "Text",
 				width: 1760,
@@ -112,7 +112,7 @@ export default function BrandPage() {
 			title="Brand"
 			description={
 				<>
-					Download OpenImage brand assets for use in your projects.{" "}
+					Download NeoImage brand assets for use in your projects.{" "}
 					<Link
 						href="#guidelines"
 						className="underline underline-offset-4"
@@ -173,10 +173,10 @@ export default function BrandPage() {
 				<div className="flex flex-col gap-3">
 					<h2 className="font-semibold text-lg">Usage</h2>
 					<p className="text-muted-foreground text-base leading-relaxed">
-						OpenImage is open source — the code is free to use under its license.
+						NeoImage is open source — the code is free to use under its license.
 						That license does not cover the name or logo. You can say you use
-						OpenImage, that your project integrates with OpenImage, or that it was
-						built on top of OpenImage. You cannot name your product OpenImage, imply
+						NeoImage, that your project integrates with NeoImage, or that it was
+						built on top of NeoImage. You cannot name your product NeoImage, imply
 						we made or endorse your product, or use the marks commercially
 						without asking first. For anything unclear, reach out at{" "}
 						<Link
@@ -193,8 +193,8 @@ export default function BrandPage() {
 					<h2 className="font-semibold text-lg">What&apos;s not allowed</h2>
 					<ul className="text-muted-foreground text-base flex flex-col gap-2 leading-relaxed">
 						{[
-							"Using OpenImage in the name of your product, service, or domain.",
-							"Implying that OpenImage made, sponsors, or endorses your work.",
+							"Using NeoImage in the name of your product, service, or domain.",
+							"Implying that NeoImage made, sponsors, or endorses your work.",
 							"Using the logo or name on merchandise or commercial marketing.",
 							"Modifying the marks.",
 						].map((item) => (

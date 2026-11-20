@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { useEditorStore, getEditor } from "@/editor/store";
 import { useOverlayStore } from "@/editor/overlay-store";
 import { renderThumbnail } from "@/editor/stage";
 import { importImageBlobs, openImagePicker } from "@/editor/import";
-import { zoomToSelection } from "./canvas/preview-panel";
 import type { Tool } from "@/editor/types";
 import {
 	addText,
@@ -19,6 +18,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useExportDialogStore } from "./export-button";
+import { useEditorDialogs } from "./editor-dialogs-store";
+import { alignSelection, distributeSelection } from "@/editor/align";
+import {
+	fitFramesToContent,
+	frameSelection,
+	removeSelectedFrames,
+	zoomToSelection,
+	selectChildren,
+	selectParents,
+} from "@/editor/frame-actions";
+import { buildKeymap, comboFromEvent, getAction, type ActionId } from "@/editor/keybindings";
+import { getSettings, useSettingsStore } from "@/editor/settings-store";
 
 let activeSession: symbol | null = null;
 
@@ -133,157 +144,159 @@ function isTypingTarget(target: EventTarget | null) {
 	);
 }
 
+type ActionContext = { editor: ReturnType<typeof getEditor>; freeform: boolean };
+/** Returning false means "not handled": the key event is left alone. */
+type ActionHandler = (ctx: ActionContext) => boolean | void;
+
+const hasSelection = ({ editor }: ActionContext) => editor.selectedIds.length > 0;
+
+const setTool =
+	(tool: Tool): ActionHandler =>
+	({ editor }) =>
+		editor.setTool(tool);
+
+const toggleSetting = (key: "showPixelGrid" | "showLayoutGrids", label: string) => () => {
+	const next = !getSettings()[key];
+	getSettings().set({ [key]: next });
+	toast(`${label} ${next ? "on" : "off"}`, { duration: 1200 });
+};
+
+const ACTION_HANDLERS: Record<ActionId, ActionHandler> = {
+	"tool.select": setTool("select"),
+	"tool.hand": setTool("hand"),
+	"tool.frame": (ctx) => (ctx.freeform ? ctx.editor.setTool("frame") : false),
+	"tool.rect": setTool("rect"),
+	"tool.ellipse": setTool("ellipse"),
+	"tool.line": setTool("line"),
+	"tool.text": ({ editor, freeform }) => (freeform ? editor.setTool("text") : void addText()),
+	"tool.brush": ({ editor }) => {
+		editor.setTool("brush");
+		if (editor.brush.mode === "eraser") editor.setBrush({ mode: "brush" });
+	},
+	"tool.eraser": setTool("eraser"),
+	"tool.crop": () => startCrop(),
+	"tool.placeImage": () =>
+		openImagePicker((files) => void importImageBlobs(files, { addToCanvas: true })),
+	"brush.smaller": ({ editor }) =>
+		editor.setBrush({ size: Math.max(1, Math.round(editor.brush.size / 1.2)) }),
+	"brush.bigger": ({ editor }) =>
+		editor.setBrush({ size: Math.min(400, Math.round(editor.brush.size * 1.2 + 1)) }),
+
+	"edit.undo": ({ editor }) => editor.undo(),
+	"edit.redo": ({ editor }) => editor.redo(),
+	"edit.copy": (ctx) => (hasSelection(ctx) ? ctx.editor.copy() : false),
+	"edit.cut": (ctx) => (hasSelection(ctx) ? ctx.editor.cut() : false),
+	// The paste event does the work, so the browser default must still run.
+	"edit.paste": ({ editor }) => {
+		if (editor.clipboard.length > 0) pendingInternalPaste = true;
+		return false;
+	},
+	"edit.duplicate": ({ editor }) => editor.duplicateLayers(editor.selectedIds),
+	"edit.delete": (ctx) =>
+		hasSelection(ctx) ? ctx.editor.removeLayers(ctx.editor.selectedIds) : false,
+	"edit.flipH": () => flipSelection("x"),
+	"edit.flipV": () => flipSelection("y"),
+	"edit.save": ({ editor }) => {
+		void editor.saveNow().then(() => toast.success("Saved"));
+	},
+
+	"select.all": ({ editor }) => editor.selectAll(),
+	"select.none": ({ editor }) => {
+		if (editor.editingTextId) editor.setEditingTextId(null);
+		else if (editor.cropLayerId) editor.setCropLayerId(null);
+		else if (editor.tool !== "select") editor.setTool("select");
+		else editor.clearSelection();
+	},
+	"select.children": () => selectChildren(),
+	"select.parent": () => selectParents(),
+
+	"frame.wrap": () => frameSelection(),
+	"frame.remove": () => removeSelectedFrames(),
+	"frame.fit": () => fitFramesToContent(),
+
+	"arrange.forward": ({ editor }) => editor.moveLayers(editor.selectedIds, "up"),
+	"arrange.backward": ({ editor }) => editor.moveLayers(editor.selectedIds, "down"),
+	"arrange.front": ({ editor }) => editor.moveLayers(editor.selectedIds, "top"),
+	"arrange.back": ({ editor }) => editor.moveLayers(editor.selectedIds, "bottom"),
+	"layer.lock": () => toggleLockSelection(),
+	"layer.hide": () => toggleVisibilitySelection(),
+
+	"align.left": () => alignSelection("left"),
+	"align.center": () => alignSelection("center"),
+	"align.right": () => alignSelection("right"),
+	"align.top": () => alignSelection("top"),
+	"align.middle": () => alignSelection("middle"),
+	"align.bottom": () => alignSelection("bottom"),
+	"distribute.h": () => distributeSelection("x"),
+	"distribute.v": () => distributeSelection("y"),
+
+	"view.zoomIn": ({ editor }) => editor.setZoom(editor.zoom * 1.25),
+	"view.zoomOut": ({ editor }) => editor.setZoom(editor.zoom / 1.25),
+	"view.zoomFit": ({ editor }) => editor.requestFit(),
+	"view.zoom100": ({ editor }) => editor.setZoom(1),
+	"view.zoomSelection": () => zoomToSelection(),
+	"view.pixelGrid": toggleSetting("showPixelGrid", "Pixel grid"),
+	"view.layoutGrids": toggleSetting("showLayoutGrids", "Layout grids"),
+	"view.export": () => useExportDialogStore.getState().setOpen(true),
+	"view.settings": () => useEditorDialogs.getState().openSettings(),
+	"view.shortcuts": () => useEditorDialogs.getState().setShortcutsOpen(true),
+};
+
+const ARROWS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+
 function useKeyboardShortcuts() {
+	const overrides = useSettingsStore((s) => s.keybindings);
+	const keymap = useMemo(() => buildKeymap(overrides), [overrides]);
+
 	useEffect(() => {
 		const handler = (event: KeyboardEvent) => {
-			if (isTypingTarget(event.target)) return;
+			if (event.defaultPrevented || isTypingTarget(event.target)) return;
 			if (useOverlayStore.getState().overlayDepth > 0) return;
 			const editor = getEditor();
 			if (!editor.doc) return;
-			const mod = event.ctrlKey || event.metaKey;
-			const key = event.key.toLowerCase();
 			const freeform = editor.doc.mode === "freeform";
+			const mod = event.ctrlKey || event.metaKey;
 
-			const run = (fn: () => void) => {
+			// Nudging uses whatever arrow is held; Shift switches to the big nudge.
+			if (ARROWS.has(event.key) && !mod && !event.altKey) {
+				if (editor.selectedIds.length === 0) return;
 				event.preventDefault();
-				fn();
-			};
-
-			if (mod) {
-				switch (key) {
-					case "z":
-						return run(event.shiftKey ? editor.redo : editor.undo);
-					case "y":
-						return run(editor.redo);
-					case "c":
-						if (editor.selectedIds.length === 0) return;
-						return run(editor.copy);
-					case "x":
-						if (editor.selectedIds.length === 0) return;
-						return run(editor.cut);
-					case "v":
-						// Let the paste event handle clipboard images; paste layers only
-						// when we have an internal clipboard.
-						if (editor.clipboard.length > 0 && !event.shiftKey) {
-							pendingInternalPaste = true;
-						}
-						return;
-					case "d":
-						return run(() => editor.duplicateLayers(editor.selectedIds));
-					case "a":
-						return run(editor.selectAll);
-					case "]":
-						return run(() =>
-							editor.moveLayers(editor.selectedIds, event.shiftKey ? "top" : "up"),
-						);
-					case "[":
-						return run(() =>
-							editor.moveLayers(editor.selectedIds, event.shiftKey ? "bottom" : "down"),
-						);
-					case "l":
-						return run(toggleLockSelection);
-					case "h":
-						if (event.shiftKey) return run(toggleVisibilitySelection);
-						return;
-					case "=":
-					case "+":
-						return run(() => editor.setZoom(editor.zoom * 1.25));
-					case "-":
-						return run(() => editor.setZoom(editor.zoom / 1.25));
-					case "0":
-						return run(editor.requestFit);
-					case "1":
-						return run(() => editor.setZoom(1));
-					case "e":
-						return run(() => useExportDialogStore.getState().setOpen(true));
-					case "k":
-						if (!event.shiftKey) return;
-						return run(() =>
-							openImagePicker((files) => void importImageBlobs(files, { addToCanvas: true })),
-						);
-					case "s":
-						return run(() => {
-							void editor.saveNow().then(() => toast.success("Saved"));
-						});
-				}
+				nudgeSelection(event.key, event.shiftKey);
 				return;
 			}
 
-			if (event.altKey) return;
-
-			if (event.shiftKey && key === "h") return run(() => flipSelection("x"));
-			if (event.shiftKey && key === "v") return run(() => flipSelection("y"));
-			if (event.shiftKey && event.code === "Digit1") return run(() => editor.requestFit());
-			if (event.shiftKey && event.code === "Digit2") return run(zoomToSelection);
-
-			// FreeForm creation tools.
-			if (!event.shiftKey) {
-				const creation: Record<string, Tool> = { r: "rect", o: "ellipse", l: "line" };
-				if (freeform) {
-					creation.f = "frame";
-					creation.t = "text";
-				}
-				const next = creation[key];
-				if (next) return run(() => editor.setTool(next));
-			}
-
-			switch (key) {
-				case "delete":
-				case "backspace":
-					if (editor.selectedIds.length === 0) return;
-					return run(() => editor.removeLayers(editor.selectedIds));
-				case "escape":
-					return run(() => {
-						if (editor.cropLayerId) editor.setCropLayerId(null);
-						else if (editor.tool !== "select") editor.setTool("select");
-						else editor.clearSelection();
-					});
-				case "v":
-					return run(() => editor.setTool("select"));
-				case "h":
-					return run(() => editor.setTool("hand"));
-				case "b":
-					return run(() => {
-						editor.setTool("brush");
-						if (editor.brush.mode === "eraser") editor.setBrush({ mode: "brush" });
-					});
-				case "e":
-					return run(() => {
-						editor.setTool("eraser");
-					});
-				case "t":
-					return run(() => (freeform ? editor.setTool("text") : addText()));
-				case "c":
-					return run(startCrop);
-				case "[":
-					return run(() => editor.setBrush({ size: Math.max(1, Math.round(editor.brush.size / 1.2)) }));
-				case "]":
-					return run(() => editor.setBrush({ size: Math.min(400, Math.round(editor.brush.size * 1.2 + 1)) }));
-				case "arrowup":
-				case "arrowdown":
-				case "arrowleft":
-				case "arrowright": {
-					if (editor.selectedIds.length === 0) return;
-					const step = event.shiftKey ? 10 : 1;
-					const dx = key === "arrowleft" ? -step : key === "arrowright" ? step : 0;
-					const dy = key === "arrowup" ? -step : key === "arrowdown" ? step : 0;
-					return run(() => {
-						const layers = editor.doc?.layers.filter(
-							(l) => editor.selectedIds.includes(l.id) && !l.locked,
-						);
-						if (!layers?.length) return;
-						editor.updateLayers(
-							layers.map((l) => ({ id: l.id, patch: { x: l.x + dx, y: l.y + dy } })),
-							{ transient: true },
-						);
-						scheduleNudgeCommit();
-					});
-				}
-			}
+			const combo = comboFromEvent(event);
+			const actionId = combo ? keymap.get(combo) : undefined;
+			if (!actionId) return;
+			const action = getAction(actionId);
+			if (action?.freeformOnly && !freeform) return;
+			const handled = ACTION_HANDLERS[actionId]({ editor, freeform });
+			if (handled !== false) event.preventDefault();
 		};
 		window.addEventListener("keydown", handler);
 		return () => window.removeEventListener("keydown", handler);
-	}, []);
+	}, [keymap]);
+}
+
+function nudgeSelection(key: string, big: boolean) {
+	const editor = getEditor();
+	const { nudge, bigNudge } = getSettings();
+	const step = big ? bigNudge : nudge;
+	const dx = key === "ArrowLeft" ? -step : key === "ArrowRight" ? step : 0;
+	const dy = key === "ArrowUp" ? -step : key === "ArrowDown" ? step : 0;
+	const doc = editor.doc;
+	if (!doc) return;
+	const selected = new Set(editor.selectedIds);
+	// Nudging a frame carries its contents along.
+	const moving = doc.layers.filter(
+		(l) => !l.locked && (selected.has(l.id) || (l.parentId && selected.has(l.parentId) && !selected.has(l.id))),
+	);
+	if (moving.length === 0) return;
+	editor.updateLayers(
+		moving.map((l) => ({ id: l.id, patch: { x: l.x + dx, y: l.y + dy } })),
+		{ transient: true },
+	);
+	scheduleNudgeCommit();
 }
 
 let nudgeTimer: ReturnType<typeof setTimeout> | null = null;

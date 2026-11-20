@@ -6,6 +6,7 @@ import type {
 	Fill,
 	FrameLayer,
 	ImageLayer,
+	LayoutGrid,
 	Shadow,
 	ShapeKind,
 	ShapeLayer,
@@ -165,5 +166,19 @@ export function createFrameLayer(
 		clipContent: true,
 		exportSettings: [createExportSetting()],
 		...init,
+	};
+}
+
+export function createLayoutGrid(type: LayoutGrid["type"] = "grid"): LayoutGrid {
+	return {
+		id: nanoid(8),
+		type,
+		visible: true,
+		color: type === "grid" ? "#ff0000" : "#ff4d4d",
+		opacity: 0.1,
+		size: 10,
+		count: type === "grid" ? 0 : type === "columns" ? 5 : 3,
+		gutter: 20,
+		margin: type === "grid" ? 0 : 20,
 	};
 }

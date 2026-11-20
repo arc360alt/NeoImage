@@ -1,1 +1,1 @@
-export const ASSET_DRAG_MIME = "application/x-openimage-asset";
+export const ASSET_DRAG_MIME = "application/x-neoimage-asset";

@@ -5,13 +5,13 @@ import { Separator } from "@/components/ui/separator";
 import { getPosts, type Post } from "@/blog/posts";
 
 export const metadata: Metadata = {
-	title: "Blog - OpenImage",
+	title: "Blog - NeoImage",
 	description:
-		"Read the latest news and updates about OpenImage, the free and open-source photo editor.",
+		"Read the latest news and updates about NeoImage, the free and open-source photo editor.",
 	openGraph: {
-		title: "Blog - OpenImage",
+		title: "Blog - NeoImage",
 		description:
-			"Read the latest news and updates about OpenImage, the free and open-source photo editor.",
+			"Read the latest news and updates about NeoImage, the free and open-source photo editor.",
 		type: "website",
 	},
 };
@@ -22,7 +22,7 @@ export default function BlogPage() {
 	return (
 		<BasePage
 			title="Blog"
-			description="Read the latest news and updates about OpenImage, the free and open-source photo editor."
+			description="Read the latest news and updates about NeoImage, the free and open-source photo editor."
 		>
 			<div className="flex flex-col">
 				{posts.map((post) => (

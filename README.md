@@ -1,4 +1,4 @@
-# OpenImage
+# NeoImage
 
 A free, open-source photo editor and design tool that runs entirely in your browser. Think Canva's ease of use with Photoshop-style layers and adjustments.
 
@@ -81,6 +81,10 @@ docker compose up -d
 ```
 
 The app will be available at [http://localhost:3100](http://localhost:3100).
+
+## Credits
+
+NeoImage is built on [OpenCut](https://github.com/OpenCut-app/OpenCut). The UI and most of the app's code come from the OpenCut project. Thanks to the OpenCut team and contributors.
 
 ## License
 

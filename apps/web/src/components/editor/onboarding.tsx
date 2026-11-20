@@ -11,7 +11,7 @@ import { Dialog, DialogBody, DialogContent, DialogTitle } from "../ui/dialog";
 export function Onboarding() {
 	const [step, setStep] = useState(0);
 	const [hasSeenOnboarding, setHasSeenOnboarding] = useLocalStorage({
-		key: "openimage-hasSeenOnboarding",
+		key: "neoimage-hasSeenOnboarding",
 		defaultValue: false,
 	});
 
@@ -28,13 +28,13 @@ export function Onboarding() {
 	const getStepTitle = () => {
 		switch (step) {
 			case 0:
-				return "Welcome to OpenImage Beta! 🎉";
+				return "Welcome to NeoImage Beta! 🎉";
 			case 1:
 				return "🎨 Getting around";
 			case 2:
 				return "🦋 Have fun testing!";
 			default:
-				return "OpenImage Onboarding";
+				return "NeoImage Onboarding";
 		}
 	};
 
@@ -44,8 +44,8 @@ export function Onboarding() {
 				return (
 					<div className="space-y-5">
 						<div className="space-y-3">
-							<Title title="Welcome to OpenImage Beta! 🎉" />
-							<Description description="You're among the first to try OpenImage - a fully open source photo editor, inspired by the best of Canva and Photoshop." />
+							<Title title="Welcome to NeoImage Beta! 🎉" />
+							<Description description="You're among the first to try NeoImage - a fully open source photo editor, inspired by the best of Canva and Photoshop." />
 						</div>
 						<NextButton onClick={handleNext}>Next</NextButton>
 					</div>
@@ -68,7 +68,7 @@ export function Onboarding() {
 						<div className="space-y-3">
 							<Title title={getStepTitle()} />
 							<Description
-								description={`Join our [Discord](${SOCIAL_LINKS.discord}), chat with cool people and share feedback to help make OpenImage the best editor ever.`}
+								description={`Join our [Discord](${SOCIAL_LINKS.discord}), chat with cool people and share feedback to help make NeoImage the best editor ever.`}
 							/>
 						</div>
 						<NextButton onClick={handleClose}>Finish</NextButton>

@@ -32,8 +32,11 @@ import {
 } from "@/components/ui/tooltip";
 import {
 	DropdownMenu,
+	DropdownMenuCheckboxItem,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuShortcut,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -50,8 +53,12 @@ import {
 } from "@/editor/crop-store";
 import { loadAssetImage } from "@/storage/assets";
 import { getStage } from "@/editor/stage";
-import { layerBounds, unionBounds } from "@/editor/freeform";
+import { zoomToSelection } from "@/editor/frame-actions";
 import type { Tool } from "@/editor/types";
+import type { ActionId } from "@/editor/keybindings";
+import { useShortcut } from "@/editor/use-shortcut";
+import { useSettingsStore, type EditorSettings } from "@/editor/settings-store";
+import { useEditorDialogs } from "@/components/editor/editor-dialogs-store";
 import { CanvasContextMenu } from "./canvas-context-menu";
 import { ASSET_DRAG_MIME } from "@/components/editor/panels/assets/drag";
 
@@ -67,29 +74,28 @@ const EditorCanvas = dynamic(() => import("./editor-canvas"), {
 const TOOLS: {
 	id: Tool | "text";
 	label: string;
-	shortcut: string;
 	icon: Parameters<typeof HugeiconsIcon>[0]["icon"];
 }[] = [
-	{ id: "select", label: "Select", shortcut: "V", icon: Cursor01Icon },
-	{ id: "hand", label: "Hand", shortcut: "H", icon: HandGripIcon },
-	{ id: "brush", label: "Brush", shortcut: "B", icon: PaintBrush02Icon },
-	{ id: "eraser", label: "Eraser", shortcut: "E", icon: Eraser01Icon },
-	{ id: "text", label: "Add text", shortcut: "T", icon: TextIcon },
-	{ id: "crop", label: "Crop image", shortcut: "C", icon: CropIcon },
+	{ id: "select", label: "Select", icon: Cursor01Icon },
+	{ id: "hand", label: "Hand", icon: HandGripIcon },
+	{ id: "brush", label: "Brush", icon: PaintBrush02Icon },
+	{ id: "eraser", label: "Eraser", icon: Eraser01Icon },
+	{ id: "text", label: "Add text", icon: TextIcon },
+	{ id: "crop", label: "Crop image", icon: CropIcon },
 ];
 
 /** FreeForm adds Figma-style creation tools: click or drag on the canvas. */
 const FREEFORM_TOOLS: typeof TOOLS = [
-	{ id: "select", label: "Move", shortcut: "V", icon: Cursor01Icon },
-	{ id: "hand", label: "Hand", shortcut: "H", icon: HandGripIcon },
-	{ id: "frame", label: "Frame", shortcut: "F", icon: HashtagIcon },
-	{ id: "rect", label: "Rectangle", shortcut: "R", icon: SquareIcon },
-	{ id: "ellipse", label: "Ellipse", shortcut: "O", icon: CircleIcon },
-	{ id: "line", label: "Line", shortcut: "L", icon: MinusSignIcon },
-	{ id: "text", label: "Text", shortcut: "T", icon: TextIcon },
-	{ id: "brush", label: "Brush", shortcut: "B", icon: PaintBrush02Icon },
-	{ id: "eraser", label: "Eraser", shortcut: "E", icon: Eraser01Icon },
-	{ id: "crop", label: "Crop image", shortcut: "C", icon: CropIcon },
+	{ id: "select", label: "Move", icon: Cursor01Icon },
+	{ id: "hand", label: "Hand", icon: HandGripIcon },
+	{ id: "frame", label: "Frame", icon: HashtagIcon },
+	{ id: "rect", label: "Rectangle", icon: SquareIcon },
+	{ id: "ellipse", label: "Ellipse", icon: CircleIcon },
+	{ id: "line", label: "Line", icon: MinusSignIcon },
+	{ id: "text", label: "Text", icon: TextIcon },
+	{ id: "brush", label: "Brush", icon: PaintBrush02Icon },
+	{ id: "eraser", label: "Eraser", icon: Eraser01Icon },
+	{ id: "crop", label: "Crop image", icon: CropIcon },
 ];
 
 const ZOOM_PRESETS = [0.25, 0.5, 1, 2, 4];
@@ -97,6 +103,7 @@ const ZOOM_PRESETS = [0.25, 0.5, 1, 2, 4];
 export function PreviewPanel() {
 	const [isDragOver, setIsDragOver] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
+	const freeform = useEditorStore((s) => s.doc?.mode === "freeform");
 
 	const clientToArtboard = (clientX: number, clientY: number) => {
 		const stage = getStage();
@@ -116,7 +123,10 @@ export function PreviewPanel() {
 			<div
 				ref={containerRef}
 				className={cn(
-					"relative min-h-0 flex-1 bg-[radial-gradient(var(--border)_1px,transparent_1px)] [background-size:18px_18px]",
+					"relative min-h-0 flex-1",
+					// FreeForm draws its own dot grid inside the canvas so it pans/zooms with content.
+					!freeform &&
+						"bg-[radial-gradient(var(--border)_1px,transparent_1px)] [background-size:18px_18px]",
 				)}
 				onDragOver={(e) => {
 					if (
@@ -209,7 +219,7 @@ function PreviewToolbar() {
 							</Button>
 						</TooltipTrigger>
 						<TooltipContent side="bottom">
-							{t.label} <span className="text-muted-foreground ml-1">{t.shortcut}</span>
+							{t.label} <ShortcutHint id={`tool.${t.id}` as ActionId} />
 						</TooltipContent>
 					</Tooltip>
 					</div>
@@ -233,7 +243,7 @@ function PreviewToolbar() {
 							</Button>
 						</TooltipTrigger>
 						<TooltipContent side="bottom">
-							Place image <span className="text-muted-foreground ml-1">Ctrl+Shift+K</span>
+							Place image <ShortcutHint id="tool.placeImage" />
 						</TooltipContent>
 					</Tooltip>
 				</>
@@ -278,19 +288,49 @@ function ZoomBar() {
 							{Math.round(zoom * 100)}%
 						</Button>
 					</DropdownMenuTrigger>
-					<DropdownMenuContent align="center" className="w-36">
+					<DropdownMenuContent align="end" className="w-56">
 						<DropdownMenuItem onClick={() => getEditor().requestFit()}>
 							{freeform ? "Zoom to fit all" : "Fit to screen"}
+							<MenuShortcut id="view.zoomFit" />
 						</DropdownMenuItem>
 						{freeform && (
-							<DropdownMenuItem onClick={zoomToSelection}>Zoom to selection</DropdownMenuItem>
+							<DropdownMenuItem onClick={zoomToSelection}>
+								Zoom to selection
+								<MenuShortcut id="view.zoomSelection" />
+							</DropdownMenuItem>
 						)}
+						<DropdownMenuItem onClick={() => getEditor().setZoom(zoom * 1.25)}>
+							Zoom in
+							<MenuShortcut id="view.zoomIn" />
+						</DropdownMenuItem>
+						<DropdownMenuItem onClick={() => getEditor().setZoom(zoom / 1.25)}>
+							Zoom out
+							<MenuShortcut id="view.zoomOut" />
+						</DropdownMenuItem>
 						<DropdownMenuSeparator />
 						{ZOOM_PRESETS.map((z) => (
 							<DropdownMenuItem key={z} onClick={() => getEditor().setZoom(z)}>
 								{z * 100}%
+								{z === 1 && <MenuShortcut id="view.zoom100" />}
 							</DropdownMenuItem>
 						))}
+						<DropdownMenuSeparator />
+						<DropdownMenuLabel className="text-muted-foreground text-xs">View</DropdownMenuLabel>
+						<ViewToggle setting="showPixelGrid" label="Pixel grid" shortcut="view.pixelGrid" />
+						{freeform && (
+							<>
+								<ViewToggle setting="showLayoutGrids" label="Layout grids" shortcut="view.layoutGrids" />
+								<ViewToggle setting="showDotGrid" label="Dot grid" />
+								<ViewToggle setting="showFrameNames" label="Frame names" />
+							</>
+						)}
+						<ViewToggle setting="snapToObjects" label="Snap to objects" />
+						<ViewToggle setting="snapToPixels" label="Snap to pixel grid" />
+						<DropdownMenuSeparator />
+						<DropdownMenuItem onClick={() => useEditorDialogs.getState().openSettings("canvas")}>
+							More settings…
+							<MenuShortcut id="view.settings" />
+						</DropdownMenuItem>
 					</DropdownMenuContent>
 				</DropdownMenu>
 				<Button
@@ -314,7 +354,9 @@ function ZoomBar() {
 							<HugeiconsIcon icon={ArrowExpand01Icon} />
 						</Button>
 					</TooltipTrigger>
-					<TooltipContent>Fit (Ctrl+0)</TooltipContent>
+					<TooltipContent>
+						Fit <ShortcutHint id="view.zoomFit" />
+					</TooltipContent>
 				</Tooltip>
 			</div>
 		</div>
@@ -376,12 +418,38 @@ function CropBar() {
 	);
 }
 
-/** Fit the selected layers into view (Shift+2 in FreeForm). */
-export function zoomToSelection() {
-	const { doc, selectedIds, requestFit } = getEditor();
-	if (!doc) return;
-	const bounds = unionBounds(
-		doc.layers.filter((l) => selectedIds.includes(l.id)).map(layerBounds),
+
+function ShortcutHint({ id }: { id: ActionId }) {
+	const shortcut = useShortcut(id);
+	if (!shortcut) return null;
+	return <span className="text-muted-foreground ml-1">{shortcut}</span>;
+}
+
+function MenuShortcut({ id }: { id: ActionId }) {
+	const shortcut = useShortcut(id);
+	return shortcut ? <DropdownMenuShortcut>{shortcut}</DropdownMenuShortcut> : null;
+}
+
+type ViewSetting = "showPixelGrid" | "showLayoutGrids" | "showDotGrid" | "showFrameNames" | "snapToObjects" | "snapToPixels";
+
+function ViewToggle({
+	setting,
+	label,
+	shortcut,
+}: {
+	setting: ViewSetting & keyof EditorSettings;
+	label: string;
+	shortcut?: ActionId;
+}) {
+	const checked = useSettingsStore((s) => s[setting]);
+	const set = useSettingsStore((s) => s.set);
+	return (
+		<DropdownMenuCheckboxItem
+			checked={checked}
+			onCheckedChange={(v) => set({ [setting]: v === true })}
+		>
+			{label}
+			{shortcut && <MenuShortcut id={shortcut} />}
+		</DropdownMenuCheckboxItem>
 	);
-	if (bounds) requestFit(bounds);
 }

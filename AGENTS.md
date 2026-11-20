@@ -2,7 +2,7 @@
 
 ## Architecture
 
-OpenImage is a bun + turborepo monorepo. Each app under `apps/` is a UI shell.
+NeoImage is a bun + turborepo monorepo. Each app under `apps/` is a UI shell.
 
 - `apps/web/` — Next.js (App Router), Tailwind v4, Radix UI, zustand, Konva
 

@@ -10,6 +10,9 @@ import {
 	ViewIcon,
 	HashtagIcon,
 	FullScreenIcon,
+	ViewOffIcon,
+	SquareArrowExpand01Icon,
+	Cancel01Icon,
 } from "@hugeicons/core-free-icons";
 import {
 	Section,
@@ -29,12 +32,14 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { getEditor, useEditorStore } from "@/editor/store";
-import { createExportSetting, createFrameLayer } from "@/editor/defaults";
+import { createExportSetting, createFrameLayer, createLayoutGrid, solid } from "@/editor/defaults";
+import { fitFramesToContent, removeSelectedFrames } from "@/editor/frame-actions";
+import { getSettings, useSettingsStore } from "@/editor/settings-store";
 import { exportLayers, fileNameFor, settingsFor } from "@/editor/export";
 import { renderLayer } from "@/editor/stage";
 import { FRAME_PRESETS } from "@/editor/canvas-presets";
 import { frameRect, nextFrameName, nextFramePosition } from "@/editor/freeform";
-import type { ExportFormat, ExportSetting, FrameLayer, Layer } from "@/editor/types";
+import type { ExportFormat, ExportSetting, FrameLayer, Layer, LayoutGrid } from "@/editor/types";
 import { ColorField, Field, FillField, NumField, SliderField } from "../controls";
 
 const SCALES = [0.5, 0.75, 1, 1.5, 2, 3, 4];
@@ -103,6 +108,31 @@ export function FrameTab({ layer }: { layer: FrameLayer }) {
 								Zoom to frame
 							</Button>
 						</div>
+						<div className="grid grid-cols-2 gap-2">
+							<Button
+								variant="outline"
+								size="sm"
+								className="gap-1.5"
+								onClick={() => fitFramesToContent([layer])}
+								title="Shrink or grow the frame to hug its contents"
+							>
+								<HugeiconsIcon icon={SquareArrowExpand01Icon} />
+								Resize to fit
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								className="gap-1.5"
+								onClick={() => {
+									getEditor().select([layer.id]);
+									removeSelectedFrames();
+								}}
+								title="Delete the frame but keep its contents"
+							>
+								<HugeiconsIcon icon={Cancel01Icon} />
+								Remove frame
+							</Button>
+						</div>
 						<label className="flex items-center justify-between text-xs" htmlFor="clip-content">
 							<span className="text-muted-foreground">Clip content</span>
 							<Switch
@@ -164,8 +194,149 @@ export function FrameTab({ layer }: { layer: FrameLayer }) {
 					</SectionContent>
 				)}
 			</Section>
+			<LayoutGridSection layer={layer} />
 			<ExportSection layers={[layer]} />
 		</>
+	);
+}
+
+/* ------------------------------ Layout grids ----------------------------- */
+
+const GRID_TYPES: { value: LayoutGrid["type"]; label: string }[] = [
+	{ value: "grid", label: "Grid" },
+	{ value: "columns", label: "Columns" },
+	{ value: "rows", label: "Rows" },
+];
+
+function LayoutGridSection({ layer }: { layer: FrameLayer }) {
+	const grids = layer.layoutGrids ?? [];
+	const showLayoutGrids = useSettingsStore((s) => s.showLayoutGrids);
+	const setGrids = (layoutGrids: LayoutGrid[], options?: { transient?: boolean }) =>
+		getEditor().updateLayer(layer.id, { layoutGrids }, options);
+	const updateGrid = (id: string, patch: Partial<LayoutGrid>, options?: { transient?: boolean }) =>
+		setGrids(
+			grids.map((g) => (g.id === id ? { ...g, ...patch } : g)),
+			options,
+		);
+
+	return (
+		<Section sectionKey="frame-layout-grid">
+			<SectionHeader
+				trailing={
+					<Button
+						variant="ghost"
+						size="icon"
+						onClick={() => setGrids([...grids, createLayoutGrid(grids.length === 0 ? "grid" : "columns")])}
+						aria-label="Add layout grid"
+					>
+						<HugeiconsIcon icon={PlusSignIcon} />
+					</Button>
+				}
+			>
+				<SectionTitle>Layout grid</SectionTitle>
+			</SectionHeader>
+			{grids.length > 0 && (
+				<SectionContent>
+					<div className="flex flex-col gap-4">
+						{!showLayoutGrids && (
+							<button
+								type="button"
+								className="text-muted-foreground hover:text-foreground text-left text-xs underline-offset-2 hover:underline"
+								onClick={() => getSettings().set({ showLayoutGrids: true })}
+							>
+								Layout grids are hidden. Show them
+							</button>
+						)}
+						{grids.map((grid) => (
+							<div key={grid.id} className="flex flex-col gap-2">
+								<div className="flex items-center gap-1.5">
+									<Select
+										value={grid.type}
+										onValueChange={(type) => {
+											const fresh = createLayoutGrid(type as LayoutGrid["type"]);
+											updateGrid(grid.id, { type: fresh.type, count: fresh.count, margin: fresh.margin });
+										}}
+									>
+										<SelectTrigger className="min-w-0 flex-1" aria-label="Grid type">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											{GRID_TYPES.map((t) => (
+												<SelectItem key={t.value} value={t.value}>
+													{t.label}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+									<Button
+										variant="ghost"
+										size="icon"
+										className="shrink-0"
+										onClick={() => updateGrid(grid.id, { visible: !grid.visible })}
+										aria-label={grid.visible ? "Hide grid" : "Show grid"}
+									>
+										<HugeiconsIcon icon={grid.visible ? ViewIcon : ViewOffIcon} />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										className="shrink-0"
+										onClick={() => setGrids(grids.filter((g) => g.id !== grid.id))}
+										aria-label="Remove layout grid"
+									>
+										<HugeiconsIcon icon={MinusSignIcon} />
+									</Button>
+								</div>
+								{grid.type === "grid" ? (
+									<NumField
+										label="Size"
+										value={grid.size}
+										min={1}
+										suffix="px"
+										onChange={(size, o) => updateGrid(grid.id, { size }, o)}
+									/>
+								) : (
+									<div className="grid grid-cols-3 gap-2">
+										<NumField
+											label="#"
+											value={grid.count}
+											min={1}
+											max={100}
+											onChange={(count, o) => updateGrid(grid.id, { count }, o)}
+										/>
+										<NumField
+											label="Gut"
+											value={grid.gutter}
+											min={0}
+											onChange={(gutter, o) => updateGrid(grid.id, { gutter }, o)}
+										/>
+										<NumField
+											label="Mar"
+											value={grid.margin}
+											min={0}
+											onChange={(margin, o) => updateGrid(grid.id, { margin }, o)}
+										/>
+									</div>
+								)}
+								<div className="grid grid-cols-[1fr_5rem] gap-2">
+									<ColorField
+										value={grid.color}
+										onChange={(color, o) => updateGrid(grid.id, { color }, o)}
+									/>
+									<NumField
+										label="%"
+										value={Math.round(grid.opacity * 100)}
+										min={0}
+										max={100}
+										onChange={(v, o) => updateGrid(grid.id, { opacity: v / 100 }, o)}
+									/>
+								</div>
+							</div>
+						))}
+					</div>
+				</SectionContent>
+			)}
+		</Section>
 	);
 }
 
@@ -468,9 +639,12 @@ export function NewFramePresets() {
 export function addFrame(width: number, height: number, name?: string) {
 	const doc = getEditor().doc;
 	if (!doc) return;
+	const settings = getSettings();
 	const frame = createFrameLayer({
 		width,
 		height,
+		fill: solid(settings.frameFill),
+		clipContent: settings.frameClip,
 		name: name ?? nextFrameName(doc.layers),
 		...nextFramePosition(doc.layers),
 	});

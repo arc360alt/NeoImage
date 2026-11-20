@@ -41,12 +41,12 @@ export function Footer() {
 						<div className="mb-4 flex items-center justify-start gap-2">
 							<Image
 								src={DEFAULT_LOGO_URL}
-								alt="OpenImage"
+								alt="NeoImage"
 								width={24}
 								height={24}
 								className="invert dark:invert-0"
 							/>
-							<span className="text-lg font-bold">OpenImage</span>
+							<span className="text-lg font-bold">NeoImage</span>
 						</div>
 						<p className="text-muted-foreground mb-5 text-sm md:text-left">
 							The privacy-first photo editor and design tool that feels simple to use.
@@ -114,7 +114,18 @@ export function Footer() {
 				<div className="flex flex-col items-start justify-between gap-4 pt-2 md:flex-row">
 					<div className="text-muted-foreground flex items-center gap-4 text-sm">
 						<span>
-							© {new Date().getFullYear()} OpenImage, All Rights Reserved
+							© {new Date().getFullYear()} NeoImage, All Rights Reserved
+						</span>
+						<span>
+							UI and most of the code from{" "}
+							<Link
+								href="https://github.com/OpenCut-app/OpenCut"
+								className="hover:text-foreground underline underline-offset-4 transition-colors"
+								target="_blank"
+								rel="noopener noreferrer"
+							>
+								OpenCut
+							</Link>
 						</span>
 					</div>
 				</div>

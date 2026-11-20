@@ -198,7 +198,7 @@ function ArtboardExportPopover({ onDone }: { onDone: () => void }) {
 		try {
 			const dataUrl = await render();
 			const ext = format === "jpeg" ? "jpg" : format;
-			const safeName = doc.name.replace(/[^\w\- ]+/g, "").trim() || "openimage";
+			const safeName = doc.name.replace(/[^\w\- ]+/g, "").trim() || "neoimage";
 			downloadDataUrl(dataUrl, `${safeName}.${ext}`);
 			toast.success("Export complete", {
 				description: `${outWidth} × ${outHeight} ${format.toUpperCase()}`,

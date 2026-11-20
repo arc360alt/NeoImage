@@ -95,6 +95,8 @@ interface EditorState {
 	moveLayers: (ids: string[], direction: "up" | "down" | "top" | "bottom") => void;
 	/** FreeForm: re-evaluate which frame each layer belongs to. */
 	reparentLayers: (ids: string[]) => void;
+	/** Replaces the layer list in one history step (for multi-part edits like framing). */
+	transformLayers: (fn: (layers: Layer[]) => Layer[]) => void;
 	updateCanvas: (
 		patch: Partial<CanvasSettings>,
 		options?: { transient?: boolean },
@@ -504,6 +506,8 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 				revision: s.revision + 1,
 			}));
 		},
+
+		transformLayers: (fn) => mutateDoc((doc) => ({ layers: fn(doc.layers) })),
 
 		updateCanvas: (patch, options) =>
 			mutateDoc((doc) => ({ canvas: { ...doc.canvas, ...patch } }), options),

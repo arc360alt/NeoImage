@@ -28,9 +28,13 @@ import {
 	CloudSavingDone01Icon,
 	Loading03Icon,
 	AlertCircleIcon,
+	Settings01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ShortcutsDialog } from "./shortcuts-dialog";
+import { SettingsDialog } from "./settings-dialog";
+import { useEditorDialogs } from "./editor-dialogs-store";
+import { useShortcut } from "@/editor/use-shortcut";
 import Image from "next/image";
 import { cn } from "@/utils/ui";
 import { deleteProjects } from "@/storage/projects";
@@ -51,13 +55,38 @@ export function EditorHeader() {
 			<nav className="flex items-center gap-2">
 				<HistoryButtons />
 				<ExportButton />
+				<SettingsButton />
 				<ThemeToggle />
 			</nav>
+			<SettingsDialog />
+			<ShortcutsDialog />
 		</header>
 	);
 }
 
+function SettingsButton() {
+	const shortcut = useShortcut("view.settings");
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<Button
+					variant="ghost"
+					size="icon"
+					className="size-8"
+					onClick={() => useEditorDialogs.getState().openSettings()}
+					aria-label="Settings"
+				>
+					<HugeiconsIcon icon={Settings01Icon} />
+				</Button>
+			</TooltipTrigger>
+			<TooltipContent>Settings{shortcut && ` (${shortcut})`}</TooltipContent>
+		</Tooltip>
+	);
+}
+
 function HistoryButtons() {
+	const undoKey = useShortcut("edit.undo");
+	const redoKey = useShortcut("edit.redo");
 	const canUndo = useEditorStore((s) => s.past.length > 0 || s.pending !== null);
 	const canRedo = useEditorStore((s) => s.future.length > 0);
 	return (
@@ -75,7 +104,7 @@ function HistoryButtons() {
 						<HugeiconsIcon icon={Undo02Icon} />
 					</Button>
 				</TooltipTrigger>
-				<TooltipContent>Undo (Ctrl+Z)</TooltipContent>
+				<TooltipContent>Undo{undoKey && ` (${undoKey})`}</TooltipContent>
 			</Tooltip>
 			<Tooltip>
 				<TooltipTrigger asChild>
@@ -90,7 +119,7 @@ function HistoryButtons() {
 						<HugeiconsIcon icon={Redo02Icon} />
 					</Button>
 				</TooltipTrigger>
-				<TooltipContent>Redo (Ctrl+Shift+Z)</TooltipContent>
+				<TooltipContent>Redo{redoKey && ` (${redoKey})`}</TooltipContent>
 			</Tooltip>
 		</div>
 	);
@@ -131,9 +160,7 @@ function SaveIndicator() {
 }
 
 function ProjectDropdown() {
-	const [openDialog, setOpenDialog] = useState<"delete" | "shortcuts" | null>(
-		null,
-	);
+	const [openDialog, setOpenDialog] = useState<"delete" | null>(null);
 	const [isExiting, setIsExiting] = useState(false);
 	const router = useRouter();
 	const activeProject = useEditorStore((s) => s.doc);
@@ -172,7 +199,7 @@ function ProjectDropdown() {
 					<Button variant="ghost" size="icon" className="size-8 rounded-sm p-1">
 						<Image
 							src={DEFAULT_LOGO_URL}
-							alt="OpenImage logo"
+							alt="NeoImage logo"
 							width={32}
 							height={32}
 							className="size-5 invert dark:invert-0"
@@ -189,10 +216,17 @@ function ProjectDropdown() {
 					</DropdownMenuItem>
 
 					<DropdownMenuItem
-						onClick={() => setOpenDialog("shortcuts")}
+						onClick={() => useEditorDialogs.getState().openSettings()}
+						icon={<HugeiconsIcon icon={Settings01Icon} />}
+					>
+						Settings
+					</DropdownMenuItem>
+
+					<DropdownMenuItem
+						onClick={() => useEditorDialogs.getState().setShortcutsOpen(true)}
 						icon={<HugeiconsIcon icon={CommandIcon} />}
 					>
-						Shortcuts
+						Keyboard shortcuts
 					</DropdownMenuItem>
 
 					<DropdownMenuItem
@@ -221,10 +255,6 @@ function ProjectDropdown() {
 				onOpenChange={(isOpen) => setOpenDialog(isOpen ? "delete" : null)}
 				onConfirm={handleDeleteProject}
 				projectNames={[activeProject?.name || ""]}
-			/>
-			<ShortcutsDialog
-				isOpen={openDialog === "shortcuts"}
-				onOpenChange={(isOpen) => setOpenDialog(isOpen ? "shortcuts" : null)}
 			/>
 		</>
 	);

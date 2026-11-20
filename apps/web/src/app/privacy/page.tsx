@@ -10,13 +10,13 @@ import { Separator } from "@/components/ui/separator";
 import { SOCIAL_LINKS } from "@/site/social";
 
 export const metadata: Metadata = {
-	title: "Privacy Policy - OpenImage",
+	title: "Privacy Policy - NeoImage",
 	description:
-		"Learn how OpenImage handles your data and privacy. Our commitment to protecting your information while you edit photos.",
+		"Learn how NeoImage handles your data and privacy. Our commitment to protecting your information while you edit photos.",
 	openGraph: {
-		title: "Privacy Policy - OpenImage",
+		title: "Privacy Policy - NeoImage",
 		description:
-			"Learn how OpenImage handles your data and privacy. Our commitment to protecting your information while you edit photos.",
+			"Learn how NeoImage handles your data and privacy. Our commitment to protecting your information while you edit photos.",
 		type: "website",
 	},
 };
@@ -49,7 +49,7 @@ export default function PrivacyPage() {
 								too - nothing is uploaded
 							</li>
 							<li>
-								OpenImage does not currently require an account or login
+								NeoImage does not currently require an account or login
 							</li>
 							<li>Project data stays on your device, not our servers</li>
 							<li>
@@ -91,7 +91,7 @@ export default function PrivacyPage() {
 			<section className="flex flex-col gap-3">
 				<h2 className="text-2xl font-semibold">Accounts & Authentication</h2>
 				<p>
-					OpenImage does not currently offer user accounts, login, or Google
+					NeoImage does not currently offer user accounts, login, or Google
 					sign-in.
 				</p>
 				<p>
@@ -108,7 +108,7 @@ export default function PrivacyPage() {
 			<section className="flex flex-col gap-3">
 				<h2 className="text-2xl font-semibold">Analytics</h2>
 				<p>
-					OpenImage does not include any analytics or tracking scripts. We do
+					NeoImage does not include any analytics or tracking scripts. We do
 					not track clicks, interactions, or how you use the editor.
 				</p>
 				<p>
@@ -133,7 +133,7 @@ export default function PrivacyPage() {
 
 			<section className="flex flex-col gap-3">
 				<h2 className="text-2xl font-semibold">Third-Party Services</h2>
-				<p>OpenImage integrates with these services:</p>
+				<p>NeoImage integrates with these services:</p>
 				<ul className="list-disc space-y-2 pl-6">
 					<li>
 						<strong>Hugging Face:</strong> The background removal model is
@@ -151,7 +151,7 @@ export default function PrivacyPage() {
 				<h2 className="text-2xl font-semibold">Your Rights</h2>
 				<p>You have complete control over your data:</p>
 				<ul className="list-disc space-y-2 pl-6">
-					<li>No account is required to use OpenImage today</li>
+					<li>No account is required to use NeoImage today</li>
 					<li>Clear local storage to remove all saved projects</li>
 					<li>Contact us with any privacy concerns</li>
 				</ul>
@@ -160,7 +160,7 @@ export default function PrivacyPage() {
 			<section className="flex flex-col gap-3">
 				<h2 className="text-2xl font-semibold">Open Source Transparency</h2>
 				<p>
-					OpenImage is completely open source. You can review our code, see
+					NeoImage is completely open source. You can review our code, see
 					exactly how we handle data, and even self-host the application if you
 					prefer.
 				</p>

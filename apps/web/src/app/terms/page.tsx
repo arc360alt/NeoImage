@@ -10,13 +10,13 @@ import { Separator } from "@/components/ui/separator";
 import { SOCIAL_LINKS } from "@/site/social";
 
 export const metadata: Metadata = {
-	title: "Terms of Service - OpenImage",
+	title: "Terms of Service - NeoImage",
 	description:
-		"OpenImage's Terms of Service. Fair, transparent terms for our free and open-source photo editor.",
+		"NeoImage's Terms of Service. Fair, transparent terms for our free and open-source photo editor.",
 	openGraph: {
-		title: "Terms of Service - OpenImage",
+		title: "Terms of Service - NeoImage",
 		description:
-			"OpenImage's Terms of Service. Fair, transparent terms for our free and open-source photo editor.",
+			"NeoImage's Terms of Service. Fair, transparent terms for our free and open-source photo editor.",
 		type: "website",
 	},
 };
@@ -87,7 +87,7 @@ export default function TermsPage() {
 					processing happens locally on your device. We never see, store, or
 					have access to your files. We make no claims to ownership, licensing,
 					or rights over your photos, projects, or any content you create using
-					OpenImage.
+					NeoImage.
 				</p>
 				<ul className="list-disc space-y-2 pl-6">
 					<li>
@@ -95,25 +95,25 @@ export default function TermsPage() {
 					</li>
 					<li>You retain all intellectual property rights to your content</li>
 					<li>You can export and use your content however you choose</li>
-					<li>No watermarks, no licensing restrictions from OpenImage</li>
+					<li>No watermarks, no licensing restrictions from NeoImage</li>
 				</ul>
 			</section>
 
 			<section className="flex flex-col gap-3">
-				<h2 className="text-2xl font-semibold">How You Can Use OpenImage</h2>
-				<p>OpenImage is free for personal and commercial use. You can:</p>
+				<h2 className="text-2xl font-semibold">How You Can Use NeoImage</h2>
+				<p>NeoImage is free for personal and commercial use. You can:</p>
 				<ul className="list-disc space-y-2 pl-6">
 					<li>
 						Create photos for personal, educational, or commercial purposes
 					</li>
-					<li>Use OpenImage for client work and paid projects</li>
-					<li>Share and distribute photos created with OpenImage</li>
+					<li>Use NeoImage for client work and paid projects</li>
+					<li>Share and distribute photos created with NeoImage</li>
 					<li>
-						Modify and distribute the OpenImage software (under MIT license)
+						Modify and distribute the NeoImage software (under MIT license)
 					</li>
 				</ul>
 				<p>
-					You&apos;re responsible for how you use OpenImage and the content you
+					You&apos;re responsible for how you use NeoImage and the content you
 					create. Don&apos;t use it for anything illegal in your jurisdiction.
 				</p>
 			</section>
@@ -123,14 +123,14 @@ export default function TermsPage() {
 				<p>
 					AI features like background removal run entirely in your browser using
 					on-device models. No content is uploaded to any server. These features
-					are optional - you can use OpenImage without them.
+					are optional - you can use NeoImage without them.
 				</p>
 			</section>
 
 			<section className="flex flex-col gap-3">
 				<h2 className="text-2xl font-semibold">Service</h2>
 				<p>
-					OpenImage does not currently require an account. The service is provided
+					NeoImage does not currently require an account. The service is provided
 					&quot;as is&quot; without warranties. While we strive for
 					reliability, we can&apos;t guarantee uninterrupted service.
 				</p>
@@ -138,10 +138,10 @@ export default function TermsPage() {
 
 			<section className="flex flex-col gap-3">
 				<h2 className="text-2xl font-semibold">Open Source Benefits</h2>
-				<p>Because OpenImage is open source, you have additional rights:</p>
+				<p>Because NeoImage is open source, you have additional rights:</p>
 				<ul className="list-disc space-y-2 pl-6">
 					<li>Review our code to see exactly how we handle your data</li>
-					<li>Self-host OpenImage on your own servers</li>
+					<li>Self-host NeoImage on your own servers</li>
 					<li>Modify the software to suit your needs</li>
 					<li>Contribute improvements back to the community</li>
 				</ul>
@@ -162,7 +162,7 @@ export default function TermsPage() {
 			<section className="flex flex-col gap-3">
 				<h2 className="text-2xl font-semibold">Limitations and Liability</h2>
 				<p>
-					OpenImage is provided free of charge. To the extent permitted by law:
+					NeoImage is provided free of charge. To the extent permitted by law:
 				</p>
 				<ul className="list-disc space-y-2 pl-6">
 					<li>We&apos;re not liable for any loss of data or content</li>
@@ -182,7 +182,7 @@ export default function TermsPage() {
 
 			<section className="flex flex-col gap-3">
 				<h2 className="text-2xl font-semibold">Service Changes</h2>
-				<p>We may update OpenImage and these terms:</p>
+				<p>We may update NeoImage and these terms:</p>
 				<ul className="list-disc space-y-2 pl-6">
 					<li>We&apos;ll notify you of significant changes to these terms</li>
 					<li>Continued use means you accept any updates</li>
@@ -193,7 +193,7 @@ export default function TermsPage() {
 
 			<section className="flex flex-col gap-3">
 				<h2 className="text-2xl font-semibold">Stopping Use</h2>
-				<p>You can stop using OpenImage at any time:</p>
+				<p>You can stop using NeoImage at any time:</p>
 				<ul className="list-disc space-y-2 pl-6">
 					<li>Clear your browser data to remove local projects</li>
 				</ul>

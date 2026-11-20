@@ -18,6 +18,10 @@ import {
 	ClipboardIcon,
 	ScissorIcon,
 	ViewOffIcon,
+	HashtagIcon,
+	FullScreenIcon,
+	SquareArrowExpand01Icon,
+	Cancel01Icon,
 } from "@hugeicons/core-free-icons";
 import {
 	ContextMenu,
@@ -38,6 +42,19 @@ import {
 	toggleVisibilitySelection,
 } from "@/editor/actions";
 import { useRemoveBackground } from "@/components/editor/use-remove-background";
+import {
+	fitFramesToContent,
+	frameSelection,
+	removeSelectedFrames,
+	zoomToSelection,
+} from "@/editor/frame-actions";
+import type { ActionId } from "@/editor/keybindings";
+import { useShortcut } from "@/editor/use-shortcut";
+
+function Shortcut({ id }: { id: ActionId }) {
+	const shortcut = useShortcut(id);
+	return shortcut ? <ContextMenuShortcut>{shortcut}</ContextMenuShortcut> : null;
+}
 
 export function CanvasContextMenu({ children }: { children: React.ReactNode }) {
 	const selected = useSelectedLayers();
@@ -46,6 +63,10 @@ export function CanvasContextMenu({ children }: { children: React.ReactNode }) {
 	const ids = selected.map((l) => l.id);
 	const single = selected.length === 1 ? selected[0] : null;
 	const allLocked = selected.length > 0 && selected.every((l) => l.locked);
+	const freeform = useEditorStore((s) => s.doc?.mode === "freeform");
+	const hasFrames = selected.some((l) => l.type === "frame");
+	const hasNonFrames = selected.some((l) => l.type !== "frame");
+	const inFrame = selected.some((l) => l.parentId);
 
 	return (
 		<ContextMenu>
@@ -61,14 +82,14 @@ export function CanvasContextMenu({ children }: { children: React.ReactNode }) {
 							onClick={() => getEditor().paste()}
 						>
 							Paste
-							<ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
+							<Shortcut id="edit.paste" />
 						</ContextMenuItem>
 						<ContextMenuItem
 							icon={<HugeiconsIcon icon={Layers01Icon} />}
 							onClick={() => getEditor().selectAll()}
 						>
 							Select all
-							<ContextMenuShortcut>Ctrl+A</ContextMenuShortcut>
+							<Shortcut id="select.all" />
 						</ContextMenuItem>
 					</>
 				) : (
@@ -78,14 +99,14 @@ export function CanvasContextMenu({ children }: { children: React.ReactNode }) {
 							onClick={() => getEditor().copy()}
 						>
 							Copy
-							<ContextMenuShortcut>Ctrl+C</ContextMenuShortcut>
+							<Shortcut id="edit.copy" />
 						</ContextMenuItem>
 						<ContextMenuItem
 							icon={<HugeiconsIcon icon={ScissorIcon} />}
 							onClick={() => getEditor().cut()}
 						>
 							Cut
-							<ContextMenuShortcut>Ctrl+X</ContextMenuShortcut>
+							<Shortcut id="edit.cut" />
 						</ContextMenuItem>
 						<ContextMenuItem
 							disabled={!hasClipboard}
@@ -93,16 +114,55 @@ export function CanvasContextMenu({ children }: { children: React.ReactNode }) {
 							onClick={() => getEditor().paste()}
 						>
 							Paste
-							<ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
+							<Shortcut id="edit.paste" />
 						</ContextMenuItem>
 						<ContextMenuItem
 							icon={<HugeiconsIcon icon={Copy01Icon} />}
 							onClick={() => getEditor().duplicateLayers(ids)}
 						>
 							Duplicate
-							<ContextMenuShortcut>Ctrl+D</ContextMenuShortcut>
+							<Shortcut id="edit.duplicate" />
 						</ContextMenuItem>
 						<ContextMenuSeparator />
+						{freeform && (
+							<>
+								{hasNonFrames && (
+									<ContextMenuItem
+										icon={<HugeiconsIcon icon={HashtagIcon} />}
+										onClick={frameSelection}
+									>
+										Frame selection
+										<Shortcut id="frame.wrap" />
+									</ContextMenuItem>
+								)}
+								{(hasFrames || inFrame) && (
+									<ContextMenuItem
+										icon={<HugeiconsIcon icon={SquareArrowExpand01Icon} />}
+										onClick={() => fitFramesToContent()}
+									>
+										Resize frame to fit
+										<Shortcut id="frame.fit" />
+									</ContextMenuItem>
+								)}
+								{hasFrames && (
+									<ContextMenuItem
+										icon={<HugeiconsIcon icon={Cancel01Icon} />}
+										onClick={removeSelectedFrames}
+									>
+										Remove frame
+										<Shortcut id="frame.remove" />
+									</ContextMenuItem>
+								)}
+								<ContextMenuItem
+									icon={<HugeiconsIcon icon={FullScreenIcon} />}
+									onClick={zoomToSelection}
+								>
+									Zoom to selection
+									<Shortcut id="view.zoomSelection" />
+								</ContextMenuItem>
+								<ContextMenuSeparator />
+							</>
+						)}
 						<ContextMenuSub>
 							<ContextMenuSubTrigger icon={<HugeiconsIcon icon={Layers01Icon} />}>
 								Arrange
@@ -113,24 +173,28 @@ export function CanvasContextMenu({ children }: { children: React.ReactNode }) {
 									onClick={() => getEditor().moveLayers(ids, "top")}
 								>
 									Bring to front
+									<Shortcut id="arrange.front" />
 								</ContextMenuItem>
 								<ContextMenuItem
 									icon={<HugeiconsIcon icon={LayerBringForwardIcon} />}
 									onClick={() => getEditor().moveLayers(ids, "up")}
 								>
 									Bring forward
+									<Shortcut id="arrange.forward" />
 								</ContextMenuItem>
 								<ContextMenuItem
 									icon={<HugeiconsIcon icon={LayerSendBackwardIcon} />}
 									onClick={() => getEditor().moveLayers(ids, "down")}
 								>
 									Send backward
+									<Shortcut id="arrange.backward" />
 								</ContextMenuItem>
 								<ContextMenuItem
 									icon={<HugeiconsIcon icon={LayerSendToBackIcon} />}
 									onClick={() => getEditor().moveLayers(ids, "bottom")}
 								>
 									Send to back
+									<Shortcut id="arrange.back" />
 								</ContextMenuItem>
 							</ContextMenuSubContent>
 						</ContextMenuSub>
@@ -139,12 +203,14 @@ export function CanvasContextMenu({ children }: { children: React.ReactNode }) {
 							onClick={() => flipSelection("x")}
 						>
 							Flip horizontal
+							<Shortcut id="edit.flipH" />
 						</ContextMenuItem>
 						<ContextMenuItem
 							icon={<HugeiconsIcon icon={FlipVerticalIcon} />}
 							onClick={() => flipSelection("y")}
 						>
 							Flip vertical
+							<Shortcut id="edit.flipV" />
 						</ContextMenuItem>
 						{single?.type === "image" && (
 							<>
@@ -154,7 +220,7 @@ export function CanvasContextMenu({ children }: { children: React.ReactNode }) {
 									onClick={startCrop}
 								>
 									Crop
-									<ContextMenuShortcut>C</ContextMenuShortcut>
+									<Shortcut id="tool.crop" />
 								</ContextMenuItem>
 								<ContextMenuItem
 									disabled={isRunning}
@@ -171,13 +237,14 @@ export function CanvasContextMenu({ children }: { children: React.ReactNode }) {
 							onClick={toggleLockSelection}
 						>
 							{allLocked ? "Unlock" : "Lock"}
-							<ContextMenuShortcut>Ctrl+L</ContextMenuShortcut>
+							<Shortcut id="layer.lock" />
 						</ContextMenuItem>
 						<ContextMenuItem
 							icon={<HugeiconsIcon icon={ViewOffIcon} />}
 							onClick={toggleVisibilitySelection}
 						>
 							Hide
+							<Shortcut id="layer.hide" />
 						</ContextMenuItem>
 						<ContextMenuItem
 							variant="destructive"
@@ -185,7 +252,7 @@ export function CanvasContextMenu({ children }: { children: React.ReactNode }) {
 							onClick={() => getEditor().removeLayers(ids)}
 						>
 							Delete
-							<ContextMenuShortcut>Del</ContextMenuShortcut>
+							<Shortcut id="edit.delete" />
 						</ContextMenuItem>
 					</>
 				)}

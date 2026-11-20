@@ -21,6 +21,6 @@ export const usePanelStore = create<PanelStore>()(
 			setPanel: ({ panel, size }) =>
 				set((s) => ({ panels: { ...s.panels, [panel]: size } })),
 		}),
-		{ name: "openimage-panel-sizes" },
+		{ name: "neoimage-panel-sizes" },
 	),
 );

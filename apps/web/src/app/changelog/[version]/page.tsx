@@ -24,7 +24,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 	const release = getReleaseByVersion({ version });
 	if (!release) return {};
 	return {
-		title: `${release.title} (${release.version}) - OpenImage Changelog`,
+		title: `${release.title} (${release.version}) - NeoImage Changelog`,
 		description: release.description,
 	};
 }

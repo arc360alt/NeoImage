@@ -47,6 +47,8 @@ import {
 	TransformTab,
 } from "./tabs";
 import { ExportSection, FrameTab, PageProperties } from "./freeform";
+import { frameSelection } from "@/editor/frame-actions";
+import { useShortcut } from "@/editor/use-shortcut";
 
 type TabId = "content" | "adjust" | "transform" | "effects" | "export";
 
@@ -91,6 +93,7 @@ export function PropertiesPanel() {
 	const selected = useSelectedLayers();
 	const freeform = useEditorStore((s) => s.doc?.mode === "freeform");
 	const { activeTabPerType, setActiveTab } = usePropertiesStore();
+	const frameShortcut = useShortcut("frame.wrap");
 
 	if (selected.length === 0) {
 		return (
@@ -113,6 +116,19 @@ export function PropertiesPanel() {
 					<div className="flex h-11 items-center border-b px-3.5">
 						<span className="text-muted-foreground text-sm">{selected.length} layers selected</span>
 					</div>
+					{freeform && selected.some((l) => l.type !== "frame") && (
+						<Section sectionKey="multi-frame">
+							<SectionContent className="pt-4">
+								<Button variant="outline" className="w-full gap-2" onClick={frameSelection}>
+									<HugeiconsIcon icon={HashtagIcon} />
+									Frame selection
+									{frameShortcut && (
+										<span className="text-muted-foreground ml-auto text-xs">{frameShortcut}</span>
+									)}
+								</Button>
+							</SectionContent>
+						</Section>
+					)}
 					<AlignSection multiple />
 					<BlendingSection layers={selected} />
 					{freeform && <ExportSection layers={selected} />}

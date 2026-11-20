@@ -1,5 +1,5 @@
 {
-	"name": "OpenImage",
+	"name": "NeoImage",
 	"description": "A simple but powerful photo editor and design tool. In your browser.",
 	"display": "standalone",
 	"start_url": "/",
@@ -41,7 +41,7 @@
 			"density": "4.0"
 		}
 	],
-	"short_name": "OpenImage",
+	"short_name": "NeoImage",
 	"background_color": "#0d0d0d",
 	"theme_color": "#0d0d0d"
 }

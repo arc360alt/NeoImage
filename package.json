@@ -1,15 +1,15 @@
 {
-  "name": "openimage",
+  "name": "neoimage",
   "packageManager": "bun@1.3.14",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "build:web": "turbo run build --filter=@openimage/web",
-    "dev:web": "turbo run dev --filter=@openimage/web",
-    "start:web": "turbo run start --filter=@openimage/web",
-    "check-types:web": "turbo run check-types --filter=@openimage/web",
+    "build:web": "turbo run build --filter=@neoimage/web",
+    "dev:web": "turbo run dev --filter=@neoimage/web",
+    "start:web": "turbo run start --filter=@neoimage/web",
+    "check-types:web": "turbo run check-types --filter=@neoimage/web",
     "format:web": "prettier apps/web/src --write",
     "generate:icons": "bun apps/web/scripts/generate-icons.ts",
     "test": "bun test"

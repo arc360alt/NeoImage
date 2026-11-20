@@ -2,8 +2,8 @@
 
 import Konva from "konva";
 import { nanoid } from "nanoid";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Group, Layer as KLayer, Line, Rect, Stage, Transformer, Circle, Ellipse, Text as KText } from "react-konva";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Group, Layer as KLayer, Line, Rect, Shape, Stage, Transformer, Circle, Ellipse, Text as KText } from "react-konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { useShallow } from "zustand/react/shallow";
 import { getEditor, useEditorStore } from "@/editor/store";
@@ -13,6 +13,7 @@ import { onFontLoaded } from "@/editor/fonts";
 import { snapNode, type Guide } from "@/editor/snapping";
 import { getOrCreateDrawingLayer } from "@/editor/actions";
 import { useCropStore } from "@/editor/crop-store";
+import { getSettings, useSettingsStore } from "@/editor/settings-store";
 import type { DrawingLayer, FrameLayer, Layer, TextLayer } from "@/editor/types";
 import {
 	childrenOf,
@@ -38,9 +39,12 @@ const ACCENT = "#0ea5e9";
 const FIT_PADDING = 64;
 
 type Marquee = { x1: number; y1: number; x2: number; y2: number };
-type Creation = Marquee & { shift: boolean };
+type Creation = Marquee & { shift: boolean; alt: boolean };
 
 const CREATION_TOOLS = new Set(["frame", "rect", "ellipse", "line", "text"]);
+
+/** World-space spacing of the FreeForm dot grid at 100% zoom. */
+const DOT_SPACING = 18;
 
 export default function EditorCanvas({
 	onContextMenuLayer,
@@ -75,6 +79,18 @@ export default function EditorCanvas({
 	const editingTextId = useEditorStore((s) => s.editingTextId);
 	const freeform = useEditorStore((s) => s.doc?.mode === "freeform");
 	const fitTarget = useEditorStore((s) => s.fitTarget);
+	const prefs = useSettingsStore(
+		useShallow((s) => ({
+			showDotGrid: s.showDotGrid,
+			showPixelGrid: s.showPixelGrid,
+			showLayoutGrids: s.showLayoutGrids,
+			showFrameNames: s.showFrameNames,
+			wheelBehavior: s.wheelBehavior,
+			zoomSpeed: s.zoomSpeed,
+			rotationSnap: s.rotationSnap,
+		})),
+	);
+	const [isShiftDown, setIsShiftDown] = useState(false);
 
 	const dragState = useRef<{
 		startPositions: Map<string, { x: number; y: number }>;
@@ -174,6 +190,7 @@ export default function EditorCanvas({
 	// Space bar = temporary hand tool.
 	useEffect(() => {
 		const down = (e: KeyboardEvent) => {
+			if (e.key === "Shift") setIsShiftDown(true);
 			if (e.code !== "Space" || e.repeat) return;
 			const target = e.target as HTMLElement | null;
 			if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
@@ -182,12 +199,19 @@ export default function EditorCanvas({
 		};
 		const up = (e: KeyboardEvent) => {
 			if (e.code === "Space") setIsSpaceDown(false);
+			if (e.key === "Shift") setIsShiftDown(false);
+		};
+		const blur = () => {
+			setIsSpaceDown(false);
+			setIsShiftDown(false);
 		};
 		window.addEventListener("keydown", down);
 		window.addEventListener("keyup", up);
+		window.addEventListener("blur", blur);
 		return () => {
 			window.removeEventListener("keydown", down);
 			window.removeEventListener("keyup", up);
+			window.removeEventListener("blur", blur);
 		};
 	}, []);
 
@@ -275,7 +299,8 @@ export default function EditorCanvas({
 				const node = e.target;
 				const state = dragState.current;
 				const movingIds = new Set([layer.id, ...(state?.startPositions.keys() ?? [])]);
-				if (!(e.evt as MouseEvent).altKey) {
+				const { snapToObjects, snapThreshold } = getSettings();
+				if (snapToObjects && !(e.evt as MouseEvent).altKey) {
 					const others = doc.layers
 						.filter((l) => l.visible && !movingIds.has(l.id))
 						.map((l) => stage.findOne(`#${l.id}`))
@@ -285,7 +310,7 @@ export default function EditorCanvas({
 						parent: content,
 						others,
 						artboard: doc.mode === "freeform" ? undefined : doc.canvas,
-						threshold: 6 / stage.scaleX(),
+						threshold: snapThreshold / stage.scaleX(),
 					});
 					setGuides(nextGuides);
 				}
@@ -302,11 +327,12 @@ export default function EditorCanvas({
 				setGuides([]);
 				const state = dragState.current;
 				dragState.current = null;
-				const patches = [{ id: layer.id, patch: { x: e.target.x(), y: e.target.y() } }];
+				const px = getSettings().snapToPixels ? Math.round : (v: number) => v;
+				const patches = [{ id: layer.id, patch: { x: px(e.target.x()), y: px(e.target.y()) } }];
 				if (state && stage) {
 					for (const id of state.startPositions.keys()) {
 						const node = stage.findOne(`#${id}`);
-						if (node) patches.push({ id, patch: { x: node.x(), y: node.y() } });
+						if (node) patches.push({ id, patch: { x: px(node.x()), y: px(node.y()) } });
 					}
 				}
 				getEditor().updateLayers(patches);
@@ -350,6 +376,7 @@ export default function EditorCanvas({
 		const doc = getEditor().doc;
 		if (!doc) return;
 		const patches: { id: string; patch: Partial<Layer> }[] = [];
+		const px = getSettings().snapToPixels ? Math.round : (v: number) => v;
 		for (const node of tr.nodes()) {
 			const layer = doc.layers.find((l) => l.id === node.id());
 			if (!layer) continue;
@@ -360,8 +387,8 @@ export default function EditorCanvas({
 			const signX = Math.sign(sx) || 1;
 			const signY = Math.sign(sy) || 1;
 			const base = {
-				x: node.x(),
-				y: node.y(),
+				x: px(node.x()),
+				y: px(node.y()),
 				rotation: node.rotation(),
 				scaleX: signX,
 				scaleY: signY,
@@ -405,8 +432,8 @@ export default function EditorCanvas({
 				id: layer.id,
 				patch: {
 					...base,
-					width: Math.max(1, layer.width * ax),
-					height: isLine ? 0 : Math.max(1, layer.height * ay),
+					width: Math.max(1, px(layer.width * ax)),
+					height: isLine ? 0 : Math.max(1, px(layer.height * ay)),
 				},
 			});
 		}
@@ -437,7 +464,7 @@ export default function EditorCanvas({
 
 		if (isCreationTool) {
 			const p = toArtboard(pos);
-			setCreation({ x1: p.x, y1: p.y, x2: p.x, y2: p.y, shift: evt.shiftKey });
+			setCreation({ x1: p.x, y1: p.y, x2: p.x, y2: p.y, shift: evt.shiftKey, alt: evt.altKey });
 			return;
 		}
 
@@ -465,8 +492,10 @@ export default function EditorCanvas({
 		if (!pos) return;
 		if (creation) {
 			const p = toArtboard(pos);
-			const shift = (e.evt as MouseEvent).shiftKey ?? false;
-			setCreation((c) => (c ? { ...c, x2: p.x, y2: p.y, shift } : c));
+			const evt = e.evt as MouseEvent;
+			const shift = evt.shiftKey ?? false;
+			const alt = evt.altKey ?? false;
+			setCreation((c) => (c ? { ...c, x2: p.x, y2: p.y, shift, alt } : c));
 			return;
 		}
 		if (isBrushTool) setPointer(toArtboard(pos));
@@ -486,12 +515,26 @@ export default function EditorCanvas({
 		const editor = getEditor();
 		const doc = editor.doc;
 		if (!doc) return;
+		const settings = getSettings();
+		const creationTool = tool;
+		// Figma goes back to Move after drawing; the setting keeps the tool armed.
+		const restoreTool = () => {
+			if (settings.keepToolActive) editor.setTool(creationTool);
+		};
 		const dragged = Math.abs(c.x2 - c.x1) * zoom > 4 || Math.abs(c.y2 - c.y1) * zoom > 4;
 		let { x, y, width, height } = creationRect(c);
-		const shapeFill = solid(doc.mode === "freeform" ? "#d9d9d9" : "#3b82f6");
+		if (settings.snapToPixels) {
+			const x2 = Math.round(x + width);
+			const y2 = Math.round(y + height);
+			x = Math.round(x);
+			y = Math.round(y);
+			width = x2 - x;
+			height = y2 - y;
+		}
+		const shapeFill = solid(doc.mode === "freeform" ? settings.shapeFill : "#3b82f6");
 
 		if (tool === "line") {
-			const strokeWidth = 4;
+			const strokeWidth = settings.lineWidth;
 			const dx = dragged ? c.x2 - c.x1 : 200;
 			const dy = dragged ? c.y2 - c.y1 : 0;
 			const angle = Math.atan2(dy, dx);
@@ -499,12 +542,13 @@ export default function EditorCanvas({
 				width: Math.max(1, Math.hypot(dx, dy)),
 				height: 0,
 				rotation: (angle * 180) / Math.PI,
-				stroke: { enabled: true, color: "#111111", width: strokeWidth },
+				stroke: { enabled: true, color: settings.lineColor, width: strokeWidth },
 				// The line is drawn through the middle of a strokeWidth-tall box.
 				x: c.x1 + Math.sin(angle) * (strokeWidth / 2),
 				y: c.y1 - Math.cos(angle) * (strokeWidth / 2),
 			});
 			editor.addLayers([line]);
+			restoreTool();
 			return;
 		}
 
@@ -515,9 +559,10 @@ export default function EditorCanvas({
 				x,
 				y,
 				width: dragged ? Math.max(40, width) : 320,
-				fontSize: 48,
+				fontFamily: settings.textFont,
+				fontSize: settings.textSize,
 				align: "left",
-				fill: solid("#111111"),
+				fill: solid(settings.textColor),
 			});
 			editor.addLayers([text]);
 			editor.setEditingTextId(text.id);
@@ -526,10 +571,14 @@ export default function EditorCanvas({
 
 		if (!dragged) {
 			// A click creates a default-sized item at the pointer.
-			width = tool === "frame" ? 400 : 100;
-			height = tool === "frame" ? 300 : 100;
+			width = tool === "frame" ? settings.frameWidth : 100;
+			height = tool === "frame" ? settings.frameHeight : 100;
 			x = c.x1;
 			y = c.y1;
+			if (c.alt) {
+				x -= width / 2;
+				y -= height / 2;
+			}
 		}
 
 		if (tool === "frame") {
@@ -539,6 +588,8 @@ export default function EditorCanvas({
 				y: Math.round(y),
 				width: Math.round(width),
 				height: Math.round(height),
+				fill: solid(settings.frameFill),
+				clipContent: settings.frameClip,
 			});
 			// Drawing a frame around loose layers puts them inside it, like Figma.
 			const adopt = doc.layers
@@ -547,6 +598,7 @@ export default function EditorCanvas({
 				.map((l) => l.id);
 			editor.addLayers([frame]);
 			editor.reparentLayers(adopt);
+			restoreTool();
 			return;
 		}
 
@@ -559,6 +611,7 @@ export default function EditorCanvas({
 			name: tool === "ellipse" ? "Ellipse" : "Rectangle",
 		});
 		editor.addLayers([shape]);
+		restoreTool();
 	};
 
 	const handleStageMouseUp = (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
@@ -626,10 +679,11 @@ export default function EditorCanvas({
 		e.evt.preventDefault();
 		const stage = stageRef.current;
 		if (!stage) return;
-		if (e.evt.ctrlKey || e.evt.metaKey) {
+		const wantsZoom = prefs.wheelBehavior === "zoom" ? !e.evt.shiftKey : e.evt.ctrlKey || e.evt.metaKey;
+		if (wantsZoom) {
 			const pointerPos = stage.getPointerPosition();
 			if (!pointerPos) return;
-			const factor = Math.exp(-e.evt.deltaY * 0.0025);
+			const factor = Math.exp(-e.evt.deltaY * 0.0025 * prefs.zoomSpeed);
 			const nextZoom = Math.max(0.02, Math.min(32, zoom * factor));
 			const anchor = toArtboard(pointerPos);
 			prevZoom.current = nextZoom;
@@ -683,6 +737,30 @@ export default function EditorCanvas({
 		return Math.min(4, Math.max(0.25, bucket));
 	}, [zoom]);
 
+	// FreeForm's dot grid lives in world space, so it pans and zooms with the content.
+	const syncDotGrid = useCallback(
+		(pos: { x: number; y: number }) => {
+			const el = containerRef.current;
+			if (!el) return;
+			if (!freeform || !prefs.showDotGrid) {
+				el.style.backgroundImage = "";
+				return;
+			}
+			// Keep on-screen spacing readable by doubling/halving the world spacing.
+			let spacing = DOT_SPACING * zoom;
+			while (spacing < DOT_SPACING * 0.66) spacing *= 2;
+			while (spacing > DOT_SPACING * 2) spacing /= 2;
+			el.style.backgroundImage = "radial-gradient(var(--border) 1px, transparent 1px)";
+			el.style.backgroundSize = `${spacing}px ${spacing}px`;
+			el.style.backgroundPosition = `${pos.x - spacing / 2}px ${pos.y - spacing / 2}px`;
+		},
+		[freeform, zoom, prefs.showDotGrid],
+	);
+
+	useLayoutEffect(() => {
+		syncDotGrid(stagePos);
+	}, [syncDotGrid, stagePos]);
+
 	if (!canvas) return <div ref={containerRef} className="size-full" />;
 
 	const cropLayer = cropLayerId ? layers.find((l) => l.id === cropLayerId) : undefined;
@@ -696,6 +774,7 @@ export default function EditorCanvas({
 					? "text"
 					: "crosshair"
 				: "default";
+
 
 	return (
 		<div
@@ -726,6 +805,9 @@ export default function EditorCanvas({
 					scaleX={zoom}
 					scaleY={zoom}
 					draggable={isPanning}
+					onDragMove={(e) => {
+						if (e.target === stageRef.current) syncDotGrid(e.target.position());
+					}}
 					onDragEnd={(e) => {
 						if (e.target === stageRef.current) setStagePos(e.target.position());
 					}}
@@ -775,6 +857,7 @@ export default function EditorCanvas({
 									cacheRatio={cacheRatio}
 									handlers={handlers}
 									suspendClip={suspendClip}
+									showLayoutGrids={prefs.showLayoutGrids}
 								/>
 							) : (
 								layers.map((layer) => (
@@ -791,7 +874,10 @@ export default function EditorCanvas({
 						</Group>
 					</KLayer>
 					<KLayer name="ui">
-						{freeform && (
+						{prefs.showPixelGrid && zoom >= PIXEL_GRID_MIN_ZOOM && (
+							<PixelGrid stage={stageRef.current} zoom={zoom} stagePos={stagePos} size={size} />
+						)}
+						{freeform && prefs.showFrameNames && (
 							<FrameLabels
 								layers={layers}
 								selectedIds={selectedIds}
@@ -822,8 +908,8 @@ export default function EditorCanvas({
 						<Transformer
 							ref={trRef}
 							visible={tool === "select"}
-							rotationSnaps={[0, 45, 90, 135, 180, 225, 270, 315]}
-							rotationSnapTolerance={4}
+							rotationSnaps={rotationSnaps(prefs.rotationSnap, isShiftDown)}
+							rotationSnapTolerance={isShiftDown ? 180 : 3}
 							anchorSize={10}
 							anchorCornerRadius={5}
 							anchorStroke={ACCENT}
@@ -907,9 +993,63 @@ function creationRect(c: Creation) {
 	let width = Math.abs(c.x2 - c.x1);
 	let height = Math.abs(c.y2 - c.y1);
 	if (c.shift) width = height = Math.max(width, height);
+	if (c.alt) {
+		// Alt draws outward from the starting point, like Figma.
+		return { x: c.x1 - width, y: c.y1 - height, width: width * 2, height: height * 2 };
+	}
 	const x = c.x2 < c.x1 ? c.x1 - width : c.x1;
 	const y = c.y2 < c.y1 ? c.y1 - height : c.y1;
 	return { x, y, width, height };
+}
+
+/** Rotation snap angles. Shift always snaps (15° when snapping is off). */
+function rotationSnaps(step: number, shift: boolean) {
+	const angle = step > 0 ? step : shift ? 15 : 0;
+	if (angle <= 0) return [];
+	const out: number[] = [];
+	for (let a = 0; a < 360; a += angle) out.push(a);
+	return out;
+}
+
+/** Zoom at which the 1px pixel grid appears (Figma shows it from 800%). */
+const PIXEL_GRID_MIN_ZOOM = 8;
+
+/** Lines on every whole pixel of the visible area. Lives on the UI layer, so it never exports. */
+function PixelGrid({
+	stage,
+	zoom,
+	stagePos,
+	size,
+}: {
+	stage: Konva.Stage | null;
+	zoom: number;
+	stagePos: { x: number; y: number };
+	size: { width: number; height: number };
+}) {
+	if (!stage) return null;
+	const x1 = Math.floor(-stagePos.x / zoom);
+	const y1 = Math.floor(-stagePos.y / zoom);
+	const x2 = Math.ceil((size.width - stagePos.x) / zoom);
+	const y2 = Math.ceil((size.height - stagePos.y) / zoom);
+	return (
+		<Shape
+			listening={false}
+			stroke="rgba(128,128,128,0.25)"
+			strokeWidth={1 / zoom}
+			sceneFunc={(ctx, shape) => {
+				ctx.beginPath();
+				for (let x = x1; x <= x2; x++) {
+					ctx.moveTo(x, y1);
+					ctx.lineTo(x, y2);
+				}
+				for (let y = y1; y <= y2; y++) {
+					ctx.moveTo(x1, y);
+					ctx.lineTo(x2, y);
+				}
+				ctx.strokeShape(shape);
+			}}
+		/>
+	);
 }
 
 function CreationPreview({
@@ -965,6 +1105,7 @@ function FreeformContent({
 	cacheRatio,
 	handlers,
 	suspendClip,
+	showLayoutGrids,
 }: {
 	layers: Layer[];
 	interactive: boolean;
@@ -972,6 +1113,7 @@ function FreeformContent({
 	cacheRatio: number;
 	handlers: LayerNodeHandlers;
 	suspendClip: boolean;
+	showLayoutGrids: boolean;
 }) {
 	const frameIds = new Set(layers.filter((l) => l.type === "frame").map((l) => l.id));
 	const node = (layer: Layer) => (
@@ -998,6 +1140,7 @@ function FreeformContent({
 							cacheRatio={cacheRatio}
 							handlers={handlers}
 							suspendClip={suspendClip}
+							showLayoutGrids={showLayoutGrids}
 						>
 							{layers.filter((l) => l.parentId === layer.id).map(node)}
 						</FrameNode>

@@ -17,6 +17,7 @@ import type {
 	DrawingLayer,
 	FrameLayer,
 	ImageLayer,
+	LayoutGrid,
 	Layer,
 	ShapeLayer,
 	TextLayer,
@@ -160,11 +161,13 @@ export function LayerNode(props: NodeProps) {
 export function FrameNode({
 	children,
 	suspendClip,
+	showLayoutGrids = true,
 	...props
 }: NodeProps & {
 	layer: FrameLayer;
 	children: React.ReactNode;
 	suspendClip: boolean;
+	showLayoutGrids?: boolean;
 }) {
 	const { layer } = props;
 	const ref = useRef<Konva.Rect>(null);
@@ -214,9 +217,75 @@ export function FrameNode({
 				}
 			>
 				{children}
+				{showLayoutGrids && layer.layoutGrids?.some((g) => g.visible) && (
+					<Shape
+						// Editor-only: hidden when exporting (see editor/stage.ts).
+						name="editor-only"
+						listening={false}
+						sceneFunc={(ctx) => {
+							const node = ref.current;
+							if (!node) return;
+							drawLayoutGrids(ctx, layer.layoutGrids ?? [], {
+								x: node.x(),
+								y: node.y(),
+								width: node.width() * node.scaleX(),
+								height: node.height() * node.scaleY(),
+								zoom: node.getStage()?.scaleX() ?? 1,
+							});
+						}}
+					/>
+				)}
 			</Group>
 		</Group>
 	);
+}
+
+/** Paints Figma-style layout grids (uniform grid, columns, rows) over a frame rect. */
+function drawLayoutGrids(
+	ctx: Konva.Context,
+	grids: LayoutGrid[],
+	frame: { x: number; y: number; width: number; height: number; zoom: number },
+) {
+	const { x, y, width, height, zoom } = frame;
+	for (const grid of grids) {
+		if (!grid.visible) continue;
+		ctx.save();
+		ctx.globalAlpha = Math.max(0, Math.min(1, grid.opacity));
+		ctx.fillStyle = grid.color;
+		ctx.strokeStyle = grid.color;
+		if (grid.type === "grid") {
+			const step = Math.max(1, grid.size);
+			// Skip when the lines would be closer than 3 screen pixels.
+			if (step * zoom >= 3) {
+				ctx.lineWidth = 1 / zoom;
+				ctx.globalAlpha = Math.min(1, ctx.globalAlpha * 2.5);
+				ctx.beginPath();
+				for (let gx = x + step; gx < x + width; gx += step) {
+					ctx.moveTo(gx, y);
+					ctx.lineTo(gx, y + height);
+				}
+				for (let gy = y + step; gy < y + height; gy += step) {
+					ctx.moveTo(x, gy);
+					ctx.lineTo(x + width, gy);
+				}
+				ctx.stroke();
+			}
+		} else {
+			const horizontal = grid.type === "columns";
+			const span = horizontal ? width : height;
+			const count = Math.max(1, Math.round(grid.count));
+			const inner = span - grid.margin * 2 - grid.gutter * (count - 1);
+			const band = inner / count;
+			if (band > 0) {
+				for (let i = 0; i < count; i++) {
+					const start = grid.margin + i * (band + grid.gutter);
+					if (horizontal) ctx.fillRect(x + start, y, band, height);
+					else ctx.fillRect(x, y + start, width, band);
+				}
+			}
+		}
+		ctx.restore();
+	}
 }
 
 function ImageNode(props: NodeProps & { layer: ImageLayer }) {

@@ -9,15 +9,15 @@ export type Post = {
 
 const POSTS: Post[] = [
 	{
-		slug: "introducing-openimage",
-		title: "Introducing OpenImage",
+		slug: "introducing-neoimage",
+		title: "Introducing NeoImage",
 		description:
 			"A free, open-source photo editor that combines the ease of Canva with the power of Photoshop.",
 		publishedAt: "2026-11-05",
-		author: "The OpenImage team",
+		author: "The NeoImage team",
 		content: `Most photo editors force a choice. Design tools are friendly but shallow; pro editors are powerful but intimidating, and many of the good features now sit behind a subscription.
 
-**OpenImage** is our attempt at both: a layer-based editor with real adjustments and filters, plus the templates, text styles and stickers that make quick designs painless.
+**NeoImage** is our attempt at both: a layer-based editor with real adjustments and filters, plus the templates, text styles and stickers that make quick designs painless.
 
 ## Private by design
 
@@ -38,11 +38,11 @@ Layer masks, selections and retouching brushes are next on the [roadmap](/roadma
 	},
 	{
 		slug: "how-layers-work",
-		title: "How layers work in OpenImage",
+		title: "How layers work in NeoImage",
 		description:
 			"A quick tour of the layers panel: stacking order, blend modes, locking and more.",
 		publishedAt: "2026-11-05",
-		author: "The OpenImage team",
+		author: "The NeoImage team",
 		content: `Every object you add to a design (a photo, a heading, a shape) is its own **layer**. The layers panel at the bottom of the editor lists them from top to bottom.
 
 ## Reordering

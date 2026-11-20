@@ -23,7 +23,7 @@ const icon =
 export const EXTERNAL_TOOLS: ExternalTool[] = [
 	{
 		name: "Konva",
-		description: "The 2D canvas framework that powers the OpenImage editor",
+		description: "The 2D canvas framework that powers the NeoImage editor",
 		url: "https://konvajs.org",
 		icon: icon(Layers01Icon),
 	},
