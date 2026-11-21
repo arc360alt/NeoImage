@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type SettingsTab = "general" | "canvas" | "tools" | "keyboard";
+export type SettingsTab = "general" | "canvas" | "tools" | "keyboard" | "about";
 
 /** Open state for the editor's app-level dialogs, so shortcuts and menus can open them. */
 export const useEditorDialogs = create<{

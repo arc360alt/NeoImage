@@ -7,6 +7,7 @@ import {
 	Cancel01Icon,
 	ComputerSettingsIcon,
 	GridViewIcon,
+	InformationCircleIcon,
 	KeyboardIcon,
 	PlusSignIcon,
 	ArrowTurnBackwardIcon,
@@ -51,6 +52,7 @@ const TABS: {
 	{ id: "canvas", label: "Canvas & snapping", icon: GridViewIcon },
 	{ id: "tools", label: "Tool defaults", icon: PencilEdit02Icon },
 	{ id: "keyboard", label: "Keyboard shortcuts", icon: KeyboardIcon },
+	{ id: "about", label: "About", icon: InformationCircleIcon },
 ];
 
 export function SettingsDialog() {
@@ -89,6 +91,7 @@ export function SettingsDialog() {
 						{tab === "canvas" && <CanvasSettings />}
 						{tab === "tools" && <ToolSettings />}
 						{tab === "keyboard" && <KeyboardSettings />}
+						{tab === "about" && <AboutSettings />}
 					</div>
 				</div>
 			</DialogContent>
@@ -621,6 +624,77 @@ function RecordingChip() {
 		<span className="border-primary text-primary animate-pulse rounded-md border px-2 py-0.5 text-xs">
 			Press keys…
 		</span>
+	);
+}
+
+const REPO_URL = "https://github.com/arc360alt/OpenImage";
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "dev";
+const COMMIT_SHA = process.env.NEXT_PUBLIC_COMMIT_SHA || "";
+
+function AboutSettings() {
+	return (
+		<div className="flex min-h-full flex-col">
+			<div>
+				<Heading>NeoImage</Heading>
+				<p className="text-muted-foreground py-3 text-sm leading-relaxed">
+					A free, open-source photo editor that runs entirely in your browser. Projects and images
+					are stored locally on your device and never uploaded. Edit a single artboard, or lay out
+					many frames on an infinite FreeForm canvas, and export to PNG, JPEG, WebP or true vector
+					SVG.
+				</p>
+
+				<Heading>Build</Heading>
+				<Row label="Version">
+					<span className="text-sm tabular-nums">{APP_VERSION}</span>
+				</Row>
+				<Row label="Commit" description="The exact source revision this copy was built from.">
+					{COMMIT_SHA ? (
+						<a
+							href={`${REPO_URL}/commit/${COMMIT_SHA}`}
+							target="_blank"
+							rel="noreferrer"
+							title={COMMIT_SHA}
+							className="font-mono text-sm underline-offset-4 hover:underline"
+						>
+							{COMMIT_SHA.slice(0, 7)}
+						</a>
+					) : (
+						<span className="text-muted-foreground text-sm">Unknown</span>
+					)}
+				</Row>
+
+				<Heading>Source</Heading>
+				<Row label="GitHub repository" description="Report issues, suggest features or contribute.">
+					<a
+						href={REPO_URL}
+						target="_blank"
+						rel="noreferrer"
+						className="text-sm underline-offset-4 hover:underline"
+					>
+						arc360alt/OpenImage
+					</a>
+				</Row>
+				<Row label="Credits" description="UI and most of the code from OpenCut.">
+					<a
+						href="https://github.com/OpenCut-app/OpenCut"
+						target="_blank"
+						rel="noreferrer"
+						className="text-sm underline-offset-4 hover:underline"
+					>
+						OpenCut
+					</a>
+				</Row>
+			</div>
+
+			<footer className="text-muted-foreground mt-auto flex items-center gap-2.5 border-t pt-4 text-xs leading-relaxed">
+				{/* The logo is drawn in white, so invert it on light backgrounds. */}
+				<img src="/logo.svg" alt="" className="size-5 shrink-0 invert dark:invert-0" />
+				<p>
+					NeoImage is a product by Neo Technologies and is under the NeoKit line of products,
+					provided for free under the MIT license for all.
+				</p>
+			</footer>
+		</div>
 	);
 }
 
