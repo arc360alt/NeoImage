@@ -23,6 +23,14 @@ import {
 	ArrowTurnBackwardIcon,
 	ArrowDown01Icon,
 	Image01Icon,
+	PenTool03Icon,
+	GroupItemsIcon,
+	PathIcon,
+	PathfinderUniteIcon,
+	PathfinderMinusFrontIcon,
+	PathfinderIntersectIcon,
+	PathfinderExcludeIcon,
+	PathfinderOutlineIcon,
 } from "@hugeicons/core-free-icons";
 import {
 	Section,
@@ -33,6 +41,7 @@ import {
 } from "@/components/section";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
 	Select,
@@ -52,7 +61,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/utils/ui";
-import { getEditor } from "@/editor/store";
+import { getEditor, useEditorStore } from "@/editor/store";
 import { flipSelection, startCrop } from "@/editor/actions";
 import { alignSelection, distributeSelection, type AlignMode } from "@/editor/align";
 import { ADJUSTMENTS, hasAdjustments } from "@/editor/filters";
@@ -60,8 +69,10 @@ import { DEFAULT_ADJUSTMENTS } from "@/editor/defaults";
 import { FONTS, ensureFont, preloadFontPreviews } from "@/editor/fonts";
 import type {
 	BlendMode,
+	GroupLayer,
 	ImageLayer,
 	Layer,
+	PathLayer,
 	ShapeLayer,
 	Stroke,
 	TextLayer,
@@ -69,6 +80,11 @@ import type {
 import { ColorField, Field, FillField, NumField, SliderField } from "../controls";
 import { useRemoveBackground } from "@/components/editor/use-remove-background";
 import { openImagePicker, importImageBlobs } from "@/editor/import";
+import { groupBounds, setGroupBox, ungroupSelection } from "@/editor/group-actions";
+import { useShortcut } from "@/editor/use-shortcut";
+import { booleanSelection, flattenSelection, outlineStrokeSelection, vectorTargets } from "@/editor/vector-actions";
+import type { BooleanOp } from "@/editor/vector-ops";
+import type { ActionId } from "@/editor/keybindings";
 
 type Opts = { transient?: boolean };
 
@@ -468,14 +484,19 @@ export function ImageTab({ layer }: { layer: ImageLayer }) {
 	);
 }
 
-function StrokeFields({
+export function StrokeFields({
 	stroke,
 	onChange,
 	label = "Border",
+	advanced = false,
+	closed = true,
 }: {
 	stroke: Stroke;
 	onChange: (stroke: Stroke, options?: Opts) => void;
 	label?: string;
+	/** Vector layers: caps, joins, dashes and (for closed outlines) alignment. */
+	advanced?: boolean;
+	closed?: boolean;
 }) {
 	return (
 		<div className="flex flex-col gap-3">
@@ -499,9 +520,122 @@ function StrokeFields({
 						format={(v) => `${v}px`}
 						onChange={(width, o) => onChange({ ...stroke, width }, o)}
 					/>
+					{advanced && <StrokeStyleFields stroke={stroke} onChange={onChange} closed={closed} />}
 				</>
 			)}
 		</div>
+	);
+}
+
+const DASH_PRESETS: { value: string; label: string; dash: number[] }[] = [
+	{ value: "solid", label: "Solid", dash: [] },
+	{ value: "dash", label: "Dashed", dash: [12, 8] },
+	{ value: "dot", label: "Dotted", dash: [0, 8] },
+	{ value: "long", label: "Long dash", dash: [24, 10] },
+];
+
+function StrokeStyleFields({
+	stroke,
+	onChange,
+	closed,
+}: {
+	stroke: Stroke;
+	onChange: (stroke: Stroke, options?: Opts) => void;
+	closed: boolean;
+}) {
+	const dashText = (stroke.dash ?? []).join(" ");
+	const [draft, setDraft] = useState(dashText);
+	useEffect(() => setDraft(dashText), [dashText]);
+	const preset = DASH_PRESETS.find((p) => p.dash.join(" ") === dashText)?.value ?? "custom";
+	const commitDash = (text: string) => {
+		const dash = text
+			.split(/[\s,]+/)
+			.map(Number)
+			.filter((v) => Number.isFinite(v) && v >= 0);
+		onChange({ ...stroke, dash: dash.some((v) => v > 0) ? dash : undefined });
+	};
+	return (
+		<>
+			<div className="grid grid-cols-2 gap-2">
+				<Field label="Caps">
+					<Select value={stroke.cap ?? "round"} onValueChange={(cap) => onChange({ ...stroke, cap: cap as Stroke["cap"] })}>
+						<SelectTrigger className="w-full">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="round">Round</SelectItem>
+							<SelectItem value="butt">Flat</SelectItem>
+							<SelectItem value="square">Square</SelectItem>
+						</SelectContent>
+					</Select>
+				</Field>
+				<Field label="Joins">
+					<Select value={stroke.join ?? "round"} onValueChange={(join) => onChange({ ...stroke, join: join as Stroke["join"] })}>
+						<SelectTrigger className="w-full">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="round">Round</SelectItem>
+							<SelectItem value="miter">Miter</SelectItem>
+							<SelectItem value="bevel">Bevel</SelectItem>
+						</SelectContent>
+					</Select>
+				</Field>
+			</div>
+			<Field label="Dashes">
+				<div className="flex gap-2">
+					<Select
+						value={preset}
+						onValueChange={(value) => {
+							const p = DASH_PRESETS.find((d) => d.value === value);
+							if (p) onChange({ ...stroke, dash: p.dash.length ? p.dash : undefined, cap: value === "dot" ? "round" : stroke.cap });
+						}}
+					>
+						<SelectTrigger className="w-28 shrink-0">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{DASH_PRESETS.map((p) => (
+								<SelectItem key={p.value} value={p.value}>
+									{p.label}
+								</SelectItem>
+							))}
+							<SelectItem value="custom" disabled>
+								Custom
+							</SelectItem>
+						</SelectContent>
+					</Select>
+					<Input
+						value={draft}
+						placeholder="dash gap…"
+						aria-label="Dash pattern"
+						size="xs"
+						onChange={(e) => setDraft(e.target.value)}
+						onBlur={() => commitDash(draft)}
+						onKeyDown={(e) => {
+							if (e.key === "Enter") commitDash(draft);
+						}}
+					/>
+				</div>
+			</Field>
+			{closed && (
+				<Field label="Position">
+					<Select
+						value={stroke.align ?? "center"}
+						onValueChange={(align) => onChange({ ...stroke, align: align as Stroke["align"] })}
+					>
+						<SelectTrigger className="w-full">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="center">Center</SelectItem>
+							<SelectItem value="inside">Inside</SelectItem>
+							<SelectItem value="outside">Outside</SelectItem>
+						</SelectContent>
+					</Select>
+				</Field>
+			)}
+		</>
 	);
 }
 
@@ -510,6 +644,7 @@ function StrokeFields({
 export function ShapeTab({ layer }: { layer: ShapeLayer }) {
 	const isLine = layer.shape === "line" || layer.shape === "arrow";
 	return (
+		<>
 		<Section sectionKey="shape">
 			<SectionHeader>
 				<SectionTitle>{isLine ? "Line" : "Shape"}</SectionTitle>
@@ -552,12 +687,233 @@ export function ShapeTab({ layer }: { layer: ShapeLayer }) {
 					)}
 					<StrokeFields
 						label={isLine ? "Stroke" : "Border"}
+						advanced
+						closed={!isLine}
 						stroke={layer.stroke}
 						onChange={(stroke, o) => update(layer, { stroke: isLine ? { ...stroke, enabled: true } : stroke }, o)}
 					/>
 				</SectionFields>
 			</SectionContent>
 		</Section>
+		<VectorSection layers={[layer]} />
+		</>
+	);
+}
+
+/* -------------------------------- Vector --------------------------------- */
+
+const BOOLEAN_BUTTONS: {
+	op: BooleanOp;
+	label: string;
+	shortcut: ActionId;
+	icon: Parameters<typeof HugeiconsIcon>[0]["icon"];
+}[] = [
+	{ op: "union", label: "Union", shortcut: "vector.union", icon: PathfinderUniteIcon },
+	{ op: "subtract", label: "Subtract", shortcut: "vector.subtract", icon: PathfinderMinusFrontIcon },
+	{ op: "intersect", label: "Intersect", shortcut: "vector.intersect", icon: PathfinderIntersectIcon },
+	{ op: "exclude", label: "Exclude", shortcut: "vector.exclude", icon: PathfinderExcludeIcon },
+];
+
+function BooleanButton({ op, label, shortcut, icon }: (typeof BOOLEAN_BUTTONS)[number]) {
+	const hint = useShortcut(shortcut);
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<Button
+					variant="outline"
+					size="icon"
+					className="h-8 w-full"
+					aria-label={label}
+					onClick={() => void booleanSelection(op)}
+				>
+					<HugeiconsIcon icon={icon} />
+				</Button>
+			</TooltipTrigger>
+			<TooltipContent>
+				{label} {hint && <span className="text-muted-foreground ml-1">{hint}</span>}
+			</TooltipContent>
+		</Tooltip>
+	);
+}
+
+/**
+ * Boolean operations (two or more vector layers), Flatten and Outline stroke.
+ * Shapes are converted to paths on the way; the result is one path layer.
+ */
+export function VectorSection({ layers }: { layers: Layer[] }) {
+	const flattenHint = useShortcut("vector.flatten");
+	const outlineHint = useShortcut("vector.outlineStroke");
+	const doc = getEditor().doc;
+	const ids = layers.map((l) => l.id);
+	const targets = doc ? vectorTargets(doc.layers, ids).vectors : [];
+	if (targets.length === 0) return null;
+	const canCombine = targets.length >= 2;
+	const single = targets.length === 1 && layers.length === 1 ? targets[0] : undefined;
+	const hasStroke = targets.some((t) => t.stroke.enabled && t.stroke.width > 0);
+	return (
+		<Section sectionKey="vector-ops">
+			<SectionHeader>
+				<SectionTitle>Vector</SectionTitle>
+			</SectionHeader>
+			<SectionContent>
+				<SectionFields>
+					{canCombine && <div className="grid grid-cols-4 gap-1.5">{BOOLEAN_BUTTONS.map((b) => <BooleanButton key={b.op} {...b} />)}</div>}
+					<div className="grid grid-cols-2 gap-2">
+						{!(single?.type === "path") && (
+							<Button variant="outline" size="sm" className="gap-1.5" onClick={() => flattenSelection()} title={flattenHint ?? undefined}>
+								<HugeiconsIcon icon={PathIcon} />
+								{single ? "Convert to path" : "Flatten"}
+							</Button>
+						)}
+						{hasStroke && (
+							<Button
+								variant="outline"
+								size="sm"
+								className="gap-1.5"
+								onClick={() => void outlineStrokeSelection()}
+								title={outlineHint ?? undefined}
+							>
+								<HugeiconsIcon icon={PathfinderOutlineIcon} />
+								Outline stroke
+							</Button>
+						)}
+					</div>
+				</SectionFields>
+			</SectionContent>
+		</Section>
+	);
+}
+
+/* --------------------------------- Group --------------------------------- */
+
+export function GroupTab({ layer }: { layer: GroupLayer }) {
+	// Re-measure when anything inside changes.
+	useEditorStore((s) => s.revision);
+	const doc = getEditor().doc;
+	const box = doc ? groupBounds(doc.layers, layer.id) : null;
+	const count = doc ? doc.layers.filter((l) => l.parentId === layer.id).length : 0;
+	const ungroupShortcut = useShortcut("arrange.ungroup");
+	const set = (patch: Partial<{ x: number; y: number; width: number; height: number }>, o?: Opts) =>
+		setGroupBox(layer.id, patch, o);
+	return (
+		<>
+			<AlignSection />
+			<Section sectionKey="group">
+				<SectionHeader>
+					<SectionTitle>Group</SectionTitle>
+				</SectionHeader>
+				<SectionContent>
+					<SectionFields>
+						<p className="text-muted-foreground text-xs">
+							{count} {count === 1 ? "layer" : "layers"} · double-click or Ctrl/⌘-click to select inside
+						</p>
+						{box && (
+							<div className="grid grid-cols-2 gap-2">
+								<NumField label="X" value={Math.round(box.x * 100) / 100} onChange={(x, o) => set({ x }, o)} />
+								<NumField label="Y" value={Math.round(box.y * 100) / 100} onChange={(y, o) => set({ y }, o)} />
+								<NumField
+									label="W"
+									value={Math.round(box.width * 100) / 100}
+									min={1}
+									onChange={(width, o) => set({ width }, o)}
+								/>
+								<NumField
+									label="H"
+									value={Math.round(box.height * 100) / 100}
+									min={1}
+									onChange={(height, o) => set({ height }, o)}
+								/>
+							</div>
+						)}
+						<div className="grid grid-cols-2 gap-2">
+							<Button variant="outline" size="sm" className="gap-1.5" onClick={() => flipSelection("x")}>
+								<HugeiconsIcon icon={FlipHorizontalIcon} />
+								Flip H
+							</Button>
+							<Button variant="outline" size="sm" className="gap-1.5" onClick={() => flipSelection("y")}>
+								<HugeiconsIcon icon={FlipVerticalIcon} />
+								Flip V
+							</Button>
+						</div>
+						<Button
+							variant="outline"
+							size="sm"
+							className="gap-1.5"
+							onClick={() => {
+								getEditor().select([layer.id]);
+								ungroupSelection();
+							}}
+						>
+							<HugeiconsIcon icon={GroupItemsIcon} />
+							Ungroup
+							{ungroupShortcut && <span className="text-muted-foreground ml-auto text-xs">{ungroupShortcut}</span>}
+						</Button>
+					</SectionFields>
+				</SectionContent>
+			</Section>
+			<VectorSection layers={[layer]} />
+			<BlendingSection layers={[layer]} />
+		</>
+	);
+}
+
+/* ---------------------------------- Path --------------------------------- */
+
+export function PathTab({ layer }: { layer: PathLayer }) {
+	const editing = useEditorStore((s) => s.editingPathId === layer.id);
+	const points = layer.subpaths.reduce((sum, s) => sum + s.anchors.length, 0);
+	return (
+		<>
+		<Section sectionKey="path">
+			<SectionHeader>
+				<SectionTitle>Vector</SectionTitle>
+			</SectionHeader>
+			<SectionContent>
+				<SectionFields>
+					<Button
+						variant={editing ? "secondary" : "outline"}
+						size="sm"
+						className="gap-1.5"
+						disabled={layer.locked}
+						onClick={() => getEditor().setEditingPathId(editing ? null : layer.id)}
+					>
+						<HugeiconsIcon icon={PenTool03Icon} />
+						{editing ? "Done editing" : "Edit points"}
+						<span className="text-muted-foreground ml-auto text-xs">{editing ? "Esc" : "Enter"}</span>
+					</Button>
+					<p className="text-muted-foreground text-xs">
+						{points} {points === 1 ? "point" : "points"} · {layer.subpaths.length}{" "}
+						{layer.subpaths.length === 1 ? "subpath" : "subpaths"}
+					</p>
+					<Field label="Fill">
+						<FillField value={layer.fill} allowTransparent onChange={(fill, o) => update(layer, { fill }, o)} />
+					</Field>
+					<Field label="Fill rule">
+						<Select
+							value={layer.fillRule}
+							onValueChange={(fillRule) => update(layer, { fillRule: fillRule as PathLayer["fillRule"] })}
+						>
+							<SelectTrigger className="w-full">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="nonzero">Non-zero</SelectItem>
+								<SelectItem value="evenodd">Even-odd (holes)</SelectItem>
+							</SelectContent>
+						</Select>
+					</Field>
+					<StrokeFields
+						label="Stroke"
+						advanced
+						closed={layer.subpaths.length > 0 && layer.subpaths.every((sp) => sp.closed)}
+						stroke={layer.stroke}
+						onChange={(stroke, o) => update(layer, { stroke }, o)}
+					/>
+				</SectionFields>
+			</SectionContent>
+		</Section>
+		<VectorSection layers={[layer]} />
+		</>
 	);
 }
 

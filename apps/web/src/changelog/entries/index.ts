@@ -12,6 +12,31 @@ export type ChangelogEntry = {
 
 const entries: Omit<ChangelogEntry, "isLatest">[] = [
 	{
+		version: "0.3.0",
+		date: "2026-11-23",
+		title: "Vector editing",
+		description:
+			"FreeForm becomes a vector editor too: draw with the pen tool, edit points, group layers, combine shapes with boolean operations and open SVG files as editable layers.",
+		summary: "Pen tool, editable paths, groups, boolean operations, better strokes and editable SVG import.",
+		content: "",
+		changes: [
+			{ type: "new", text: "**Pen tool** (**P**): click for corners, drag for curves, Alt to break the handles, Shift for 45°. Click the first point to close the path, Enter or Esc to finish." },
+			{ type: "new", text: "**Point editing**: double-click a path (or press Enter) to drag points and handles, click the outline to add a point, Delete to remove points and double-click a point to switch between corner and smooth." },
+			{ type: "new", text: "**Groups**: **Ctrl/⌘+G** to group, **Ctrl/⌘+Shift+G** to ungroup. Groups can nest inside frames and each other; double-click or Ctrl/⌘-click to select inside." },
+			{ type: "new", text: "**Boolean operations**: union, subtract, intersect and exclude (**Alt+Shift+U/S/I/E**), keeping curves." },
+			{ type: "new", text: "**Flatten / convert to path** (**Ctrl/⌘+E**) and **Outline stroke** (**Ctrl/⌘+Alt+O**)." },
+			{ type: "new", text: "Strokes can be dashed, with flat, round or square caps, miter, round or bevel joins, and inside, center or outside placement." },
+			{ type: "new", text: "**Editable SVG import**: open, drop or paste SVG markup (from Figma, Illustrator…) in FreeForm to get paths, groups, gradients and text instead of a flat image." },
+			{ type: "new", text: "**Copy as SVG** (**Ctrl/⌘+Shift+C**). Copying layers also puts them on the clipboard as SVG for other apps." },
+			{ type: "new", text: "True vector **SVG export** for the artboard and for frames and layers." },
+			{ type: "new", text: "**Settings**: canvas, snapping and tool defaults, plus fully customizable keyboard shortcuts and an About page." },
+			{ type: "improved", text: "Groups, converting to paths, boolean operations, point editing and Copy as SVG also work in Default projects." },
+			{ type: "improved", text: "The FreeForm dot grid now pans and zooms with the canvas." },
+			{ type: "breaking", text: "**Ctrl/⌘+E** is now Flatten (it still opens Export when there's nothing to flatten); Export keeps **Ctrl/⌘+Shift+E**. **Ctrl/⌘+Shift+G** now ungroups as well as removing frames." },
+			{ type: "technical", text: "Boolean operations use paper.js, loaded only the first time one is used." },
+		],
+	},
+	{
 		version: "0.2.0",
 		date: "2026-11-06",
 		title: "FreeForm projects",

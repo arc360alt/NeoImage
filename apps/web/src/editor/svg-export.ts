@@ -15,7 +15,8 @@ import Konva from "konva";
 import { adjustmentsToKonva, hasAdjustments } from "./filters";
 import { FONTS, ensureFont } from "./fonts";
 import { heartPath, polygonPoints, starPoints, trianglePoints } from "./geometry";
-import { layerBounds, type Rect } from "./freeform";
+import { layerBounds, topmostIds, unionBounds, type Rect } from "./freeform";
+import { pathToD } from "./path";
 import { getEditor } from "./store";
 import { getAssetBlob, loadAssetImage } from "@/storage/assets";
 import type {
@@ -24,8 +25,10 @@ import type {
 	DrawingLayer,
 	Fill,
 	FrameLayer,
+	GroupLayer,
 	ImageLayer,
 	Layer,
+	PathLayer,
 	ShapeLayer,
 	Stroke,
 	TextLayer,
@@ -426,22 +429,64 @@ async function textSvg(ctx: SvgContext, layer: TextLayer) {
 	}
 }
 
+/** Caps, joins and dashes of a vector stroke (round caps and joins unless set). */
+function vectorStrokeAttrs(stroke: Stroke, width = stroke.width) {
+	const dash = stroke.dash?.filter((v) => v >= 0);
+	return strokeAttrs(
+		{ ...stroke, width },
+		{
+			"stroke-linejoin": stroke.join ?? "round",
+			"stroke-linecap": stroke.cap ?? "round",
+			...(dash && dash.some((v) => v > 0) ? { "stroke-dasharray": dash.map(n).join(" ") } : {}),
+		},
+	);
+}
+
+/**
+ * One vector element with its fill and stroke. Inside/outside strokes are
+ * drawn twice as wide and clipped (inside) or masked (outside) by the
+ * element, exactly like the canvas does.
+ */
+function vectorElement(
+	ctx: SvgContext,
+	element: string,
+	fill: string,
+	stroke: Stroke,
+	closed: boolean,
+	bounds: { width: number; height: number },
+) {
+	const align = closed ? (stroke.align ?? "center") : "center";
+	if (align === "center" || !stroke.enabled || stroke.width <= 0) {
+		return `<${element}${fill}${vectorStrokeAttrs(stroke)}/>`;
+	}
+	const wide = `<${element} fill="none"${vectorStrokeAttrs(stroke, stroke.width * 2)}/>`;
+	const id = ctx.id(align === "inside" ? "c" : "m");
+	if (align === "inside") {
+		ctx.defs.push(`<clipPath id="${id}"><${element}/></clipPath>`);
+		return `<${element}${fill}/><g clip-path="url(#${id})">${wide}</g>`;
+	}
+	const pad = stroke.width * 2 + 2;
+	const box = { x: -pad, y: -pad, width: Math.abs(bounds.width) + pad * 2, height: Math.abs(bounds.height) + pad * 2 };
+	ctx.defs.push(
+		`<mask id="${id}" maskUnits="userSpaceOnUse"${attrs(box)}><rect${attrs({ ...box, fill: "#ffffff" })}/><${element} fill="#000000"/></mask>`,
+	);
+	return `<${element}${fill}/><g mask="url(#${id})">${wide}</g>`;
+}
+
 function shapeSvg(ctx: SvgContext, layer: ShapeLayer) {
 	const { width: w, height: h } = layer;
 	const isLine = layer.shape === "line" || layer.shape === "arrow";
 	const strokeWidth = layer.stroke.enabled ? layer.stroke.width : 0;
-	const round = { "stroke-linejoin": "round", "stroke-linecap": "round" };
 	const fill = isLine ? attrs({ fill: "none" }) : ctx.paint(layer.fill, w, h);
-	const stroke = strokeAttrs(layer.stroke, round);
-	let body: string;
+	let element: string;
 	switch (layer.shape) {
 		case "rect": {
 			const r = Math.min(layer.cornerRadius, Math.abs(w) / 2, Math.abs(h) / 2);
-			body = `<rect${attrs({ width: w, height: h, rx: r > 0 ? r : undefined })}${fill}${stroke}/>`;
+			element = `rect${attrs({ width: w, height: h, rx: r > 0 ? r : undefined })}`;
 			break;
 		}
 		case "ellipse":
-			body = `<ellipse${attrs({ cx: w / 2, cy: h / 2, rx: Math.abs(w / 2), ry: Math.abs(h / 2) })}${fill}${stroke}/>`;
+			element = `ellipse${attrs({ cx: w / 2, cy: h / 2, rx: Math.abs(w / 2), ry: Math.abs(h / 2) })}`;
 			break;
 		case "triangle":
 		case "polygon":
@@ -454,11 +499,11 @@ function shapeSvg(ctx: SvgContext, layer: ShapeLayer) {
 						: starPoints(w, h, layer.sides, layer.innerRatio);
 			const list: string[] = [];
 			for (let i = 0; i < points.length; i += 2) list.push(`${n(points[i])},${n(points[i + 1])}`);
-			body = `<polygon points="${list.join(" ")}"${fill}${stroke}/>`;
+			element = `polygon points="${list.join(" ")}"`;
 			break;
 		}
 		case "heart":
-			body = `<path d="${heartPath(w, h)}"${fill}${stroke}/>`;
+			element = `path d="${heartPath(w, h)}"`;
 			break;
 		case "line":
 		case "arrow": {
@@ -468,11 +513,20 @@ function shapeSvg(ctx: SvgContext, layer: ShapeLayer) {
 				const size = Math.max(strokeWidth * 3, 12);
 				d += `M${n(w - size)} ${n(y - size * 0.7)}L${n(w)} ${n(y)}L${n(w - size)} ${n(y + size * 0.7)}`;
 			}
-			body = `<path d="${d}"${fill}${stroke}/>`;
+			element = `path d="${d}"`;
 			break;
 		}
 	}
-	return wrap(ctx, layer, body);
+	return wrap(ctx, layer, vectorElement(ctx, element, fill, layer.stroke, !isLine, layer));
+}
+
+function pathSvg(ctx: SvgContext, layer: PathLayer) {
+	const d = pathToD(layer.subpaths);
+	if (!d) return "";
+	const element = `path${attrs({ d, "fill-rule": layer.fillRule === "evenodd" ? "evenodd" : undefined })}`;
+	const closed = layer.subpaths.length > 0 && layer.subpaths.every((s) => s.closed);
+	const fill = ctx.paint(layer.fill, layer.width, layer.height);
+	return wrap(ctx, layer, vectorElement(ctx, element, fill, layer.stroke, closed, layer));
 }
 
 /** Same curve Konva draws for a `tension` line: quadratic ends, cubic middle. */
@@ -558,7 +612,7 @@ function drawingSvg(ctx: SvgContext, layer: DrawingLayer) {
 	return wrap(ctx, layer, acc);
 }
 
-async function frameSvg(ctx: SvgContext, frame: FrameLayer, children: Layer[]) {
+async function frameSvg(ctx: SvgContext, frame: FrameLayer, children: Layer[], all: Layer[]) {
 	const w = frame.width * frame.scaleX;
 	const h = frame.height * frame.scaleY;
 	const r = Math.min(frame.cornerRadius, Math.abs(w) / 2, Math.abs(h) / 2);
@@ -573,7 +627,7 @@ async function frameSvg(ctx: SvgContext, frame: FrameLayer, children: Layer[]) {
 		style: blend ? `mix-blend-mode:${blend}` : undefined,
 		filter: shadowFilter(ctx, frame),
 	})}><g transform="${transformOf(frame)}">${rect}</g></g>`;
-	let inner = (await Promise.all(children.map((c) => layerSvg(ctx, c)))).join("");
+	let inner = (await Promise.all(children.map((c) => layerSvg(ctx, c, all)))).join("");
 	if (frame.clipContent && inner) {
 		const id = ctx.id("c");
 		ctx.defs.push(
@@ -593,6 +647,19 @@ async function frameSvg(ctx: SvgContext, frame: FrameLayer, children: Layer[]) {
 	})}>${background}${inner}</g>`;
 }
 
+/** Groups become plain <g> elements (no clipping), nesting like the layer tree. */
+async function groupSvg(ctx: SvgContext, group: GroupLayer, all: Layer[]) {
+	const children = all.filter((l) => l.parentId === group.id && l.id !== group.id);
+	const inner = (await Promise.all(children.map((c) => layerSvg(ctx, c, all)))).join("");
+	if (!inner) return "";
+	const blend = BLEND_CSS[group.blendMode];
+	return `<g${attrs({
+		id: safeId(group.name),
+		opacity: group.opacity < 1 ? group.opacity : undefined,
+		style: blend ? `mix-blend-mode:${blend}` : undefined,
+	})}>${inner}</g>`;
+}
+
 async function layerSvg(ctx: SvgContext, layer: Layer, all: Layer[] = []): Promise<string> {
 	if (!layer.visible) return "";
 	switch (layer.type) {
@@ -604,11 +671,16 @@ async function layerSvg(ctx: SvgContext, layer: Layer, all: Layer[] = []): Promi
 			return shapeSvg(ctx, layer);
 		case "drawing":
 			return drawingSvg(ctx, layer);
+		case "path":
+			return pathSvg(ctx, layer);
+		case "group":
+			return groupSvg(ctx, layer, all);
 		case "frame":
 			return frameSvg(
 				ctx,
 				layer,
 				all.filter((l) => l.parentId === layer.id),
+				all,
 			);
 	}
 }
@@ -655,7 +727,12 @@ export async function artboardToSvg({
 	if (!transparent && background.type !== "transparent") {
 		body += `<rect id="background"${attrs({ width, height })}${ctx.paint(background, width, height)}/>`;
 	}
-	for (const layer of doc.layers) body += await layerSvg(ctx, layer, doc.layers);
+	// Only top-level layers here; groups (and frames) write their own children.
+	const ids = new Set(doc.layers.map((l) => l.id));
+	for (const layer of doc.layers) {
+		if (layer.parentId && ids.has(layer.parentId)) continue;
+		body += await layerSvg(ctx, layer, doc.layers);
+	}
 	// Layers can hang off the artboard; clip like the canvas does.
 	const clip = ctx.id("c");
 	ctx.defs.push(`<clipPath id="${clip}"><rect${attrs({ width, height })}/></clipPath>`);
@@ -678,11 +755,31 @@ export async function layerToSvg(layerId: string, { scale = 1 }: { scale?: numbe
 					width: Math.abs(layer.width * layer.scaleX),
 					height: Math.abs(layer.height * layer.scaleY),
 				}
-			: layerBounds(layer);
+			: layerBounds(layer, doc.layers);
 	if (region.width <= 0 || region.height <= 0) throw new Error("Nothing to export");
 	// Export the layer even if it's hidden in the editor, like the PNG export does.
 	const body = await layerSvg(ctx, { ...layer, visible: true }, doc.layers);
 	return documentSvg(ctx, region, body, scale);
+}
+
+/**
+ * The selection as one SVG (Copy as SVG): each selected layer with its
+ * contents, cropped to their combined bounds. `marker` is stamped on the
+ * root so the editor can recognise its own clipboard content.
+ */
+export async function layersToSvg(ids: string[], { marker }: { marker?: string } = {}): Promise<string> {
+	const doc = getEditor().doc;
+	if (!doc) throw new Error("No project open");
+	const roots = topmostIds(doc.layers, ids);
+	const layers = doc.layers.filter((l) => roots.includes(l.id));
+	const region = unionBounds(layers.map((l) => layerBounds(l, doc.layers)));
+	if (!region || region.width <= 0 || region.height <= 0) throw new Error("Nothing to copy");
+	usedIds.clear();
+	const ctx = new SvgContext();
+	let body = "";
+	for (const layer of layers) body += await layerSvg(ctx, { ...layer, visible: true }, doc.layers);
+	const svg = documentSvg(ctx, region, body, 1);
+	return marker ? svg.replace("<svg ", `<svg data-neoimage-clip="${esc(marker)}" `) : svg;
 }
 
 export function svgBlob(svg: string) {

@@ -30,6 +30,13 @@ import {
 } from "@/editor/frame-actions";
 import { buildKeymap, comboFromEvent, getAction, type ActionId } from "@/editor/keybindings";
 import { getSettings, useSettingsStore } from "@/editor/settings-store";
+import { topmostIds } from "@/editor/freeform";
+import { deleteSelectedPoints, nudgeSelectedPoints } from "@/editor/path-actions";
+import { groupSelection, ungroupSelection } from "@/editor/group-actions";
+import { booleanSelection, flattenSelection, outlineStrokeSelection } from "@/editor/vector-actions";
+import { copySelectionAsSvg, isOwnClipboard, shareClipboard } from "@/editor/clipboard";
+import { importSvgMarkup } from "@/editor/svg-import";
+import { looksLikeSvg } from "@/editor/svg-parse";
 
 let activeSession: symbol | null = null;
 
@@ -168,6 +175,7 @@ const ACTION_HANDLERS: Record<ActionId, ActionHandler> = {
 	"tool.rect": setTool("rect"),
 	"tool.ellipse": setTool("ellipse"),
 	"tool.line": setTool("line"),
+	"tool.pen": (ctx) => (ctx.freeform ? ctx.editor.setTool("pen") : false),
 	"tool.text": ({ editor, freeform }) => (freeform ? editor.setTool("text") : void addText()),
 	"tool.brush": ({ editor }) => {
 		editor.setTool("brush");
@@ -184,16 +192,28 @@ const ACTION_HANDLERS: Record<ActionId, ActionHandler> = {
 
 	"edit.undo": ({ editor }) => editor.undo(),
 	"edit.redo": ({ editor }) => editor.redo(),
-	"edit.copy": (ctx) => (hasSelection(ctx) ? ctx.editor.copy() : false),
-	"edit.cut": (ctx) => (hasSelection(ctx) ? ctx.editor.cut() : false),
+	"edit.copy": (ctx) => {
+		if (!hasSelection(ctx)) return false;
+		ctx.editor.copy();
+		void shareClipboard(ctx.editor.selectedIds);
+	},
+	"edit.cut": (ctx) => {
+		if (!hasSelection(ctx)) return false;
+		void shareClipboard(ctx.editor.selectedIds);
+		ctx.editor.cut();
+	},
+	"edit.copySvg": (ctx) => (hasSelection(ctx) ? void copySelectionAsSvg() : false),
 	// The paste event does the work, so the browser default must still run.
 	"edit.paste": ({ editor }) => {
 		if (editor.clipboard.length > 0) pendingInternalPaste = true;
 		return false;
 	},
 	"edit.duplicate": ({ editor }) => editor.duplicateLayers(editor.selectedIds),
-	"edit.delete": (ctx) =>
-		hasSelection(ctx) ? ctx.editor.removeLayers(ctx.editor.selectedIds) : false,
+	"edit.delete": (ctx) => {
+		// In path edit mode, Delete removes the selected points instead of the layer.
+		if (ctx.editor.editingPathId) return void deleteSelectedPoints();
+		return hasSelection(ctx) ? ctx.editor.removeLayers(ctx.editor.selectedIds) : false;
+	},
 	"edit.flipH": () => flipSelection("x"),
 	"edit.flipV": () => flipSelection("y"),
 	"edit.save": ({ editor }) => {
@@ -202,13 +222,21 @@ const ACTION_HANDLERS: Record<ActionId, ActionHandler> = {
 
 	"select.all": ({ editor }) => editor.selectAll(),
 	"select.none": ({ editor }) => {
-		if (editor.editingTextId) editor.setEditingTextId(null);
+		if (editor.editingPathId) {
+			if (editor.selectedPoints.length > 0) editor.setSelectedPoints([]);
+			else editor.setEditingPathId(null);
+		} else if (editor.editingTextId) editor.setEditingTextId(null);
 		else if (editor.cropLayerId) editor.setCropLayerId(null);
 		else if (editor.tool !== "select") editor.setTool("select");
 		else editor.clearSelection();
 	},
-	"select.children": () => selectChildren(),
+	"select.children": ({ editor }) => {
+		if (editor.editingPathId) return void editor.setEditingPathId(null);
+		return selectChildren();
+	},
 	"select.parent": () => selectParents(),
+	"arrange.group": () => groupSelection(),
+	"arrange.ungroup": () => ungroupSelection(),
 
 	"frame.wrap": () => frameSelection(),
 	"frame.remove": () => removeSelectedFrames(),
@@ -230,6 +258,14 @@ const ACTION_HANDLERS: Record<ActionId, ActionHandler> = {
 	"distribute.h": () => distributeSelection("x"),
 	"distribute.v": () => distributeSelection("y"),
 
+	"vector.flatten": () => {
+		if (!flattenSelection()) useExportDialogStore.getState().setOpen(true);
+	},
+	"vector.outlineStroke": () => void outlineStrokeSelection(),
+	"vector.union": () => void booleanSelection("union"),
+	"vector.subtract": () => void booleanSelection("subtract"),
+	"vector.intersect": () => void booleanSelection("intersect"),
+	"vector.exclude": () => void booleanSelection("exclude"),
 	"view.zoomIn": ({ editor }) => editor.setZoom(editor.zoom * 1.25),
 	"view.zoomOut": ({ editor }) => editor.setZoom(editor.zoom / 1.25),
 	"view.zoomFit": ({ editor }) => editor.requestFit(),
@@ -261,6 +297,15 @@ function useKeyboardShortcuts() {
 			if (ARROWS.has(event.key) && !mod && !event.altKey) {
 				if (editor.selectedIds.length === 0) return;
 				event.preventDefault();
+				if (editor.editingPathId && editor.selectedPoints.length > 0) {
+					const { nudge, bigNudge } = getSettings();
+					const step = event.shiftKey ? bigNudge : nudge;
+					const dx = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
+					const dy = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
+					nudgeSelectedPoints(dx, dy);
+					scheduleNudgeCommit();
+					return;
+				}
 				nudgeSelection(event.key, event.shiftKey);
 				return;
 			}
@@ -286,10 +331,11 @@ function nudgeSelection(key: string, big: boolean) {
 	const dy = key === "ArrowUp" ? -step : key === "ArrowDown" ? step : 0;
 	const doc = editor.doc;
 	if (!doc) return;
-	const selected = new Set(editor.selectedIds);
-	// Nudging a frame carries its contents along.
+	const selected = new Set(topmostIds(doc.layers, editor.selectedIds));
+	const frames = new Set(doc.layers.filter((l) => l.type === "frame" && selected.has(l.id)).map((l) => l.id));
+	// Nudging a frame carries its contents along (groups move their own children in the store).
 	const moving = doc.layers.filter(
-		(l) => !l.locked && (selected.has(l.id) || (l.parentId && selected.has(l.parentId) && !selected.has(l.id))),
+		(l) => !l.locked && (selected.has(l.id) || (l.parentId && frames.has(l.parentId) && !selected.has(l.id))),
 	);
 	if (moving.length === 0) return;
 	editor.updateLayers(
@@ -307,6 +353,13 @@ function scheduleNudgeCommit() {
 
 let pendingInternalPaste = false;
 
+/** FreeForm pastes editable layers; Default mode keeps SVGs as images. */
+async function pasteSvgMarkup(text: string) {
+	const freeform = getEditor().doc?.mode === "freeform";
+	if (freeform && (await importSvgMarkup(text, { name: "Pasted SVG" }))) return;
+	await importImageBlobs([new File([text], "Pasted.svg", { type: "image/svg+xml" })], { addToCanvas: true });
+}
+
 function usePasteImages() {
 	useEffect(() => {
 		const handler = (event: ClipboardEvent) => {
@@ -318,6 +371,15 @@ function usePasteImages() {
 				event.preventDefault();
 				pendingInternalPaste = false;
 				void importImageBlobs(files, { addToCanvas: true });
+				return;
+			}
+			const text =
+				event.clipboardData?.getData("image/svg+xml") || event.clipboardData?.getData("text/plain") || "";
+			// SVG markup from Figma, Illustrator, a browser… unless it's our own copy.
+			if (looksLikeSvg(text) && !isOwnClipboard(text)) {
+				event.preventDefault();
+				pendingInternalPaste = false;
+				void pasteSvgMarkup(text);
 				return;
 			}
 			if (pendingInternalPaste || getEditor().clipboard.length > 0) {

@@ -47,6 +47,14 @@ export type Stroke = {
 	enabled: boolean;
 	color: string;
 	width: number;
+	/** Dash pattern (alternating dash/gap lengths). Missing or empty = solid. */
+	dash?: number[];
+	/** Line ends. Missing = each layer type's default (round for shapes and paths). */
+	cap?: "butt" | "round" | "square";
+	/** Corners. Missing = each layer type's default (round for shapes and paths). */
+	join?: "miter" | "round" | "bevel";
+	/** Where the stroke sits on closed outlines. Missing = "center". */
+	align?: "center" | "inside" | "outside";
 };
 
 export type GradientStop = { offset: number; color: string };
@@ -182,7 +190,59 @@ export type FrameLayer = LayerBase & {
 	layoutGrids?: LayoutGrid[];
 };
 
-export type Layer = ImageLayer | TextLayer | ShapeLayer | DrawingLayer | FrameLayer;
+export type AnchorType = "corner" | "smooth" | "symmetric";
+
+/**
+ * One point of a vector path, in the layer's local coordinates.
+ * Handles are offsets from the anchor (like paper.js), so moving an anchor
+ * carries its handles along. "corner" handles move independently, "smooth"
+ * handles stay collinear, and "symmetric" handles also keep equal length.
+ */
+export type PathAnchor = {
+	x: number;
+	y: number;
+	handleIn?: { x: number; y: number };
+	handleOut?: { x: number; y: number };
+	type: AnchorType;
+};
+
+export type Subpath = { anchors: PathAnchor[]; closed: boolean };
+
+/**
+ * An editable vector path (pen tool, outlines, boolean results, SVG import).
+ * Geometry is normalized so its bounds start at (0, 0) and span width × height.
+ */
+export type PathLayer = LayerBase & {
+	type: "path";
+	width: number;
+	height: number;
+	subpaths: Subpath[];
+	fill: Fill;
+	stroke: Stroke;
+	fillRule: "nonzero" | "evenodd";
+};
+
+/**
+ * A container without geometry of its own (and no clipping). Children point
+ * to it with `parentId` and keep world coordinates, like frame children.
+ * The group itself always sits at x = y = 0 with no rotation or scale:
+ * moving or transforming it moves/transforms its children (see editor/transform.ts).
+ */
+export type GroupLayer = LayerBase & {
+	type: "group";
+	/** Always 0; groups take their size from their children. */
+	width: number;
+	height: number;
+};
+
+export type Layer =
+	| ImageLayer
+	| TextLayer
+	| ShapeLayer
+	| DrawingLayer
+	| FrameLayer
+	| PathLayer
+	| GroupLayer;
 export type LayerType = Layer["type"];
 
 export type CanvasSettings = {
@@ -235,7 +295,9 @@ export type Tool =
 	| "frame"
 	| "rect"
 	| "ellipse"
-	| "line";
+	| "line"
+	// FreeForm vector pen (click for corners, drag for curves)
+	| "pen";
 
 export type BrushSettings = {
 	color: string;

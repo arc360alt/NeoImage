@@ -25,6 +25,7 @@ import {
 	MagicWand05Icon,
 	HashtagIcon,
 	ArrowRight01Icon,
+	GroupItemsIcon,
 } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,9 +38,12 @@ import { getEditor, useEditorStore } from "@/editor/store";
 import { flipSelection } from "@/editor/actions";
 import { fillToCss } from "@/editor/fill";
 import { hasAdjustments } from "@/editor/filters";
-import type { Layer } from "@/editor/types";
+import type { Layer, PathLayer } from "@/editor/types";
+import { pathToD } from "@/editor/path";
 import { useAssetUrl } from "../assets/views/uploads";
-import { frameRect } from "@/editor/freeform";
+import { ancestorsOf, frameRect, isInside } from "@/editor/freeform";
+
+const isContainer = (layer: Layer) => layer.type === "frame" || layer.type === "group";
 
 type DropPosition = "above" | "below" | "inside";
 
@@ -53,23 +57,23 @@ export function LayersPanel({ variant = "list" }: { variant?: "list" | "tree" })
 	const lastClicked = useRef<string | null>(null);
 	const isTree = variant === "tree";
 
-	// Rows top-most first. In tree mode, frames are followed by their children.
-	const frameIds = new Set(layers.filter((l) => l.type === "frame").map((l) => l.id));
+	// Rows top-most first; frames and groups are followed by their (nested) children.
+	const ids = new Set(layers.map((l) => l.id));
 	const rows: { layer: Layer; depth: number }[] = [];
 	const topFirst = [...layers].reverse();
-	if (isTree) {
-		for (const layer of topFirst) {
-			if (layer.parentId && frameIds.has(layer.parentId)) continue;
-			rows.push({ layer, depth: 0 });
-			if (layer.type === "frame" && !collapsed.has(layer.id)) {
-				for (const child of topFirst) {
-					if (child.parentId === layer.id) rows.push({ layer: child, depth: 1 });
-				}
-			}
-		}
-	} else {
-		for (const layer of topFirst) rows.push({ layer, depth: 0 });
+	const childrenByParent = new Map<string, Layer[]>();
+	for (const layer of topFirst) {
+		const key = layer.parentId && ids.has(layer.parentId) && layer.parentId !== layer.id ? layer.parentId : "";
+		childrenByParent.set(key, [...(childrenByParent.get(key) ?? []), layer]);
 	}
+	const addRows = (parentKey: string, depth: number) => {
+		if (depth > 64) return;
+		for (const layer of childrenByParent.get(parentKey) ?? []) {
+			rows.push({ layer, depth });
+			if (isContainer(layer) && !collapsed.has(layer.id)) addRows(layer.id, depth + 1);
+		}
+	};
+	addRows("", 0);
 	const ordered = rows.map((r) => r.layer);
 
 	const handleClick = (event: React.MouseEvent, layer: Layer) => {
@@ -95,13 +99,17 @@ export function LayersPanel({ variant = "list" }: { variant?: "list" | "tree" })
 		const dragged = doc.layers.find((l) => l.id === draggedId);
 		let target = doc.layers.find((l) => l.id === targetId);
 		if (!dragged || !target) return;
-		// Frames can't be nested: dropping a frame on a child targets its frame.
+		// Nothing can be dropped into itself (or into something inside it).
+		if (isInside(doc.layers, target.id, dragged.id)) return;
+		// Frames can't be nested: dropping a frame on a child targets its top-level parent.
 		if (dragged.type === "frame" && target.parentId) {
-			target = doc.layers.find((l) => l.id === target?.parentId) ?? target;
+			const top = ancestorsOf(doc.layers, target.id).at(-1);
+			target = top ?? target;
 			if (position === "inside") position = "above";
 		}
-		if (position === "inside" && target.type === "frame" && dragged.type !== "frame") {
-			// Becomes the top-most layer inside the frame.
+		if (dragged.type === "frame" && position === "inside") position = "above";
+		if (position === "inside" && isContainer(target)) {
+			// Becomes the top-most layer inside the frame or group.
 			getEditor().reorderLayer(draggedId, doc.layers.length, target.id);
 			return;
 		}
@@ -109,11 +117,9 @@ export function LayersPanel({ variant = "list" }: { variant?: "list" | "tree" })
 		const targetIndex = without.findIndex((l) => l.id === target?.id);
 		if (targetIndex === -1) return;
 		// "above" in the list means higher in the stack (later in the array).
-		getEditor().reorderLayer(
-			draggedId,
-			position === "above" ? targetIndex + 1 : targetIndex,
-			isTree ? (target.parentId ?? null) : undefined,
-		);
+		// Dropping next to a row moves the layer into (or out of) that row's parent.
+		const parentId = target.parentId && doc.layers.some((l) => l.id === target?.parentId) ? target.parentId : null;
+		getEditor().reorderLayer(draggedId, position === "above" ? targetIndex + 1 : targetIndex, parentId);
 	};
 
 	return (
@@ -281,11 +287,12 @@ function LayerRow({
 	const inputRef = useRef<HTMLInputElement>(null);
 
 	const isFrameRow = layer.type === "frame";
+	const isContainerRow = isContainer(layer);
 	const positionFor = (event: React.DragEvent): DropPosition => {
 		const rect = event.currentTarget.getBoundingClientRect();
 		const y = event.clientY - rect.top;
-		// Frame rows in the tree accept drops "inside" through their middle.
-		if (isTree && isFrameRow) {
+		// Frame and group rows accept drops "inside" through their middle.
+		if (isContainerRow) {
 			if (y < rect.height * 0.25) return "above";
 			if (y > rect.height * 0.75) return "below";
 			return "inside";
@@ -350,8 +357,8 @@ function LayerRow({
 					)}
 				/>
 			)}
-			{isTree ? (
-				isFrameRow ? (
+			{isTree || isContainerRow || depth > 0 ? (
+				isContainerRow ? (
 					<button
 						type="button"
 						className="text-muted-foreground hover:text-foreground flex size-4 shrink-0 items-center justify-center"
@@ -359,7 +366,7 @@ function LayerRow({
 							e.stopPropagation();
 							onToggleCollapse?.();
 						}}
-						aria-label={isCollapsed ? "Expand frame" : "Collapse frame"}
+						aria-label={isCollapsed ? "Expand" : "Collapse"}
 					>
 						<HugeiconsIcon
 							icon={ArrowRight01Icon}
@@ -393,7 +400,7 @@ function LayerRow({
 						className="ring-ring bg-background h-6 rounded-sm px-1 text-sm outline-none ring-1"
 					/>
 				) : (
-					<span className={cn("truncate text-sm", isTree && isFrameRow && "font-medium")}>
+					<span className={cn("truncate text-sm", isTree && isContainerRow && "font-medium")}>
 						{layer.name}
 					</span>
 				)}
@@ -471,6 +478,13 @@ function LayerThumbnail({ layer, small = false }: { layer: Layer; small?: boolea
 			</div>
 		);
 	}
+	if (layer.type === "group") {
+		return (
+			<div className={base}>
+				<HugeiconsIcon icon={GroupItemsIcon} className="text-muted-foreground size-3.5" />
+			</div>
+		);
+	}
 	if (layer.type === "image") return <ImageThumb assetId={layer.assetId} className={base} />;
 	if (layer.type === "text") {
 		return (
@@ -486,6 +500,7 @@ function LayerThumbnail({ layer, small = false }: { layer: Layer; small?: boolea
 			</div>
 		);
 	}
+	if (layer.type === "path") return <PathThumb layer={layer} className={base} />;
 	const isLine = layer.shape === "line" || layer.shape === "arrow";
 	return (
 		<div className={base}>
@@ -504,6 +519,31 @@ function LayerThumbnail({ layer, small = false }: { layer: Layer; small?: boolea
 									: undefined,
 				}}
 			/>
+		</div>
+	);
+}
+
+function PathThumb({ layer, className }: { layer: PathLayer; className: string }) {
+	const pad = Math.max(layer.width, layer.height, 1) * 0.12 + (layer.stroke.enabled ? layer.stroke.width / 2 : 0);
+	const size = Math.max(layer.width, layer.height, 1) + pad * 2;
+	const fill = layer.fill.type === "transparent" ? "none" : fillToCss(layer.fill);
+	return (
+		<div className={className}>
+			<svg
+				viewBox={`${layer.width / 2 - size / 2} ${layer.height / 2 - size / 2} ${size} ${size}`}
+				className="size-full p-0.5"
+				aria-hidden
+			>
+				<path
+					d={pathToD(layer.subpaths)}
+					fill={layer.fill.type === "solid" ? layer.fill.color : fill === "none" ? "none" : "currentColor"}
+					fillRule={layer.fillRule}
+					stroke={layer.stroke.enabled ? layer.stroke.color : layer.fill.type === "transparent" ? "currentColor" : "none"}
+					strokeWidth={layer.stroke.enabled ? Math.max(layer.stroke.width, size / 16) : size / 16}
+					strokeLinejoin="round"
+					strokeLinecap="round"
+				/>
+			</svg>
 		</div>
 	);
 }

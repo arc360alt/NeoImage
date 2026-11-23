@@ -1,5 +1,6 @@
 import type Konva from "konva";
 import { getEditor } from "./store";
+import { ancestorsOf, descendantsOf } from "./freeform";
 
 /**
  * The editor renders a single Konva stage. Keeping a module-level reference
@@ -219,10 +220,13 @@ export async function renderLayer({
 	const node = stage.findOne(`#${layerId}`);
 	const group = stage.findOne<Konva.Group>(".content-group");
 	if (!layer || !node || !group) throw new Error("Layer not found");
+	// Keep the layer, everything inside it, and the groups around it (hiding a
+	// group would hide the layer too); everything else is hidden for the capture.
 	const onlyIds = new Set([layerId]);
+	for (const child of descendantsOf(doc.layers, layerId)) onlyIds.add(child.id);
+	for (const parent of ancestorsOf(doc.layers, layerId)) if (parent.type === "group") onlyIds.add(parent.id);
 	let rect: Region;
 	if (layer.type === "frame") {
-		for (const child of doc.layers) if (child.parentId === layerId) onlyIds.add(child.id);
 		rect = { x: layer.x, y: layer.y, width: layer.width, height: layer.height };
 	} else {
 		rect = node.getClientRect({ relativeTo: group });

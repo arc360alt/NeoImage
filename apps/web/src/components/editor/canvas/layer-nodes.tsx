@@ -13,13 +13,17 @@ import {
 	trianglePoints,
 } from "@/editor/geometry";
 import { loadAssetImage } from "@/storage/assets";
+import { tracePath } from "@/editor/path";
 import type {
 	DrawingLayer,
 	FrameLayer,
+	GroupLayer,
 	ImageLayer,
 	LayoutGrid,
 	Layer,
+	PathLayer,
 	ShapeLayer,
+	Stroke,
 	TextLayer,
 } from "@/editor/types";
 
@@ -35,6 +39,11 @@ export type LayerNodeHandlers = {
 type NodeProps = {
 	layer: Layer;
 	interactive: boolean;
+	/**
+	 * Whether the node drags itself. Layers inside a group that hasn't been
+	 * entered still take clicks, but the press bubbles up so the group drags.
+	 */
+	draggable?: boolean;
 	hidden: boolean;
 	cacheRatio: number;
 	handlers: LayerNodeHandlers;
@@ -59,7 +68,7 @@ function useAssetImage(assetId: string) {
 }
 
 /** Shared Konva props for every layer type. */
-function commonProps({ layer, interactive, hidden, handlers }: NodeProps) {
+function commonProps({ layer, interactive, draggable, hidden, handlers }: NodeProps) {
 	const shadow = layer.shadow.enabled
 		? {
 				shadowEnabled: true,
@@ -83,7 +92,7 @@ function commonProps({ layer, interactive, hidden, handlers }: NodeProps) {
 		opacity: hidden ? 0 : layer.opacity,
 		visible: layer.visible,
 		listening: interactive && !layer.locked,
-		draggable: interactive && !layer.locked,
+		draggable: (draggable ?? interactive) && !layer.locked,
 		globalCompositeOperation: layer.blendMode,
 		perfectDrawEnabled: false,
 		...shadow,
@@ -147,8 +156,11 @@ export function LayerNode(props: NodeProps) {
 			return <ShapeNode {...props} layer={props.layer} />;
 		case "drawing":
 			return <DrawingNode {...props} layer={props.layer} />;
+		case "path":
+			return <PathNode {...props} layer={props.layer} />;
 		case "frame":
-			// Frames are rendered by FrameNode so they can wrap their children.
+		case "group":
+			// Frames and groups are rendered by FrameNode / GroupNode so they can wrap their children.
 			return null;
 	}
 }
@@ -236,6 +248,41 @@ export function FrameNode({
 					/>
 				)}
 			</Group>
+		</Group>
+	);
+}
+
+/**
+ * A group: a plain Konva group around its children (which keep world
+ * coordinates). It has no geometry of its own, so it's dragged through its
+ * children, and its transform is baked into them when a move or resize ends.
+ */
+export function GroupNode({
+	children,
+	layer,
+	interactive,
+	draggable,
+	hidden,
+	handlers,
+}: NodeProps & { layer: GroupLayer; children: React.ReactNode }) {
+	return (
+		<Group
+			id={layer.id}
+			name="layer group"
+			x={0}
+			y={0}
+			opacity={hidden ? 0 : layer.opacity}
+			visible={layer.visible}
+			// A locked group locks everything in it.
+			listening={!layer.locked}
+			draggable={(draggable ?? interactive) && !layer.locked}
+			globalCompositeOperation={layer.blendMode}
+			// Drag events bubble: only react to the group's own drag, not a child's.
+			onDragStart={(e) => e.target === e.currentTarget && handlers.onDragStart(e, layer)}
+			onDragMove={(e) => e.target === e.currentTarget && handlers.onDragMove(e, layer)}
+			onDragEnd={(e) => e.target === e.currentTarget && handlers.onDragEnd(e, layer)}
+		>
+			{children}
 		</Group>
 	);
 }
@@ -381,6 +428,8 @@ function ShapeNode(props: NodeProps & { layer: ShapeLayer }) {
 	const isLine = layer.shape === "line" || layer.shape === "arrow";
 	const strokeWidth = layer.stroke.enabled ? layer.stroke.width : 0;
 	const height = isLine ? Math.max(strokeWidth, 1) : layer.height;
+	const align = isLine ? "center" : layer.stroke.align;
+	const drawWidth = align && align !== "center" ? strokeWidth * 2 : strokeWidth;
 
 	return (
 		<Shape
@@ -390,14 +439,12 @@ function ShapeNode(props: NodeProps & { layer: ShapeLayer }) {
 			height={height}
 			{...(isLine ? { fillEnabled: false } : fillToKonva(layer.fill, layer.width, layer.height))}
 			stroke={layer.stroke.enabled ? layer.stroke.color : undefined}
-			strokeWidth={strokeWidth}
 			strokeEnabled={layer.stroke.enabled}
+			{...strokeStyleProps(layer.stroke, drawWidth)}
 			hitStrokeWidth={isLine ? Math.max(strokeWidth, 20) : "auto"}
-			lineJoin="round"
-			lineCap="round"
 			sceneFunc={(ctx, shape) => {
 				drawShapePath(ctx, layer, height);
-				ctx.fillStrokeShape(shape);
+				fillAndAlignedStroke(ctx, shape, () => traceShape(ctx, layer, height), align);
 				if (layer.shape === "arrow") {
 					// Arrow head.
 					const size = Math.max(strokeWidth * 3, 12);
@@ -413,14 +460,19 @@ function ShapeNode(props: NodeProps & { layer: ShapeLayer }) {
 	);
 }
 
-function drawShapePath(
+function drawShapePath(ctx: Konva.Context, layer: ShapeLayer, height: number) {
+	ctx.beginPath();
+	traceShape(ctx, layer, height);
+}
+
+/** The preset's outline (no beginPath, so it can be combined with other subpaths). */
+function traceShape(
 	ctx: Konva.Context,
 	layer: ShapeLayer,
 	height: number,
 ) {
 	const { width: w } = layer;
 	const h = layer.height;
-	ctx.beginPath();
 	const poly = (points: number[]) => {
 		ctx.moveTo(points[0], points[1]);
 		for (let i = 2; i < points.length; i += 2) ctx.lineTo(points[i], points[i + 1]);
@@ -442,6 +494,8 @@ function drawShapePath(
 			break;
 		}
 		case "ellipse":
+			// Start the arc's own subpath so it never connects to a previous one.
+			ctx.moveTo(w / 2 + Math.abs(w / 2), h / 2);
 			ctx.ellipse(w / 2, h / 2, Math.abs(w / 2), Math.abs(h / 2), 0, 0, Math.PI * 2);
 			ctx.closePath();
 			break;
@@ -472,6 +526,86 @@ function drawHeart(ctx: Konva.Context, w: number, h: number) {
 	ctx.bezierCurveTo(w * 0.55, h * 0.05, w * 0.73, -h * 0.02, w * 0.88, h * 0.16);
 	ctx.bezierCurveTo(w * 1.05, h * 0.38, w * 0.85, h * 0.68, w / 2, h * 0.95);
 	ctx.closePath();
+}
+
+/** Konva props for a vector stroke's dash, caps and joins (round by default). */
+function strokeStyleProps(stroke: Stroke, alignWidth: number) {
+	const dash = stroke.dash?.filter((v) => v >= 0);
+	return {
+		strokeWidth: alignWidth,
+		lineCap: stroke.cap ?? "round",
+		lineJoin: stroke.join ?? "round",
+		dash: dash && dash.some((v) => v > 0) ? dash : undefined,
+		dashEnabled: !!dash && dash.some((v) => v > 0),
+	} as const;
+}
+
+/**
+ * Fill, then the stroke. Inside/outside strokes are drawn twice as wide and
+ * clipped to the inside (or outside) of the outline, so only the requested
+ * half shows — the same trick the SVG export uses.
+ */
+function fillAndAlignedStroke(
+	ctx: Konva.Context,
+	shape: Konva.Shape,
+	trace: () => void,
+	align: Stroke["align"],
+	fillRule: CanvasFillRule = "nonzero",
+) {
+	if (!align || align === "center") {
+		ctx.fillStrokeShape(shape);
+		return;
+	}
+	ctx.fillShape(shape);
+	ctx.save();
+	ctx.beginPath();
+	if (align === "outside") {
+		// Everything except the shape: a huge rect with the outline cut out.
+		const big = 1e6;
+		ctx.rect(-big, -big, big * 2, big * 2);
+		trace();
+		ctx.clip("evenodd");
+	} else {
+		trace();
+		ctx.clip(fillRule);
+	}
+	ctx.beginPath();
+	trace();
+	ctx.strokeShape(shape);
+	ctx.restore();
+}
+
+/** A vector path: geometry is drawn straight from the anchors. */
+function PathNode(props: NodeProps & { layer: PathLayer }) {
+	const { layer, cacheRatio } = props;
+	const ref = useRef<Konva.Shape>(null);
+	useFilters(ref, layer, cacheRatio, true);
+	const strokeWidth = layer.stroke.enabled ? layer.stroke.width : 0;
+	const closed = layer.subpaths.length > 0 && layer.subpaths.every((s) => s.closed);
+	const align = closed ? layer.stroke.align : "center";
+	const drawWidth = align && align !== "center" ? strokeWidth * 2 : strokeWidth;
+
+	return (
+		<Shape
+			ref={ref}
+			{...commonProps(props)}
+			width={layer.width}
+			height={layer.height}
+			{...fillToKonva(layer.fill, layer.width, layer.height)}
+			fillRule={layer.fillRule}
+			stroke={layer.stroke.enabled ? layer.stroke.color : undefined}
+			strokeEnabled={layer.stroke.enabled}
+			{...strokeStyleProps(layer.stroke, drawWidth)}
+			// Thin or unfilled paths stay easy to click.
+			hitStrokeWidth={Math.max(drawWidth, 10)}
+			sceneFunc={(ctx, shape) => {
+				const trace = () => tracePath(ctx, layer.subpaths);
+				ctx.beginPath();
+				trace();
+				fillAndAlignedStroke(ctx, shape, trace, align, layer.fillRule);
+			}}
+		/>
+	);
 }
 
 function DrawingNode(props: NodeProps & { layer: DrawingLayer }) {

@@ -14,10 +14,15 @@ import { snapNode, type Guide } from "@/editor/snapping";
 import { getOrCreateDrawingLayer } from "@/editor/actions";
 import { useCropStore } from "@/editor/crop-store";
 import { getSettings, useSettingsStore } from "@/editor/settings-store";
-import type { DrawingLayer, FrameLayer, Layer, TextLayer } from "@/editor/types";
+import type { DrawingLayer, FrameLayer, Layer, PathLayer, TextLayer } from "@/editor/types";
+import { scaleSubpaths } from "@/editor/path";
 import {
+	ancestorsOf,
 	childrenOf,
 	containsRect,
+	descendantsOf,
+	isInside,
+	topmostIds,
 	contentBounds,
 	frameRect,
 	layerBounds,
@@ -29,9 +34,13 @@ import {
 	createTextLayer,
 	solid,
 } from "@/editor/defaults";
-import { FrameNode, LayerNode, type LayerNodeHandlers } from "./layer-nodes";
+import { FrameNode, GroupNode, LayerNode, type LayerNodeHandlers } from "./layer-nodes";
 import { CropOverlay } from "./crop-overlay";
 import { TextEditorOverlay } from "./text-editor-overlay";
+import { PathEditOverlay, usePathEditor, usePenTool } from "./vector-tools";
+import { clickTarget, doubleClickTarget, enteredGroups, isReachable } from "@/editor/group-actions";
+import { transformDescendants } from "@/editor/transform";
+import type { Matrix } from "@/editor/matrix";
 
 Konva.dragButtons = [0];
 
@@ -77,6 +86,8 @@ export default function EditorCanvas({
 	const fitRequest = useEditorStore((s) => s.fitRequest);
 	const cropLayerId = useEditorStore((s) => s.cropLayerId);
 	const editingTextId = useEditorStore((s) => s.editingTextId);
+	const editingPathId = useEditorStore((s) => s.editingPathId);
+	const selectedPoints = useEditorStore(useShallow((s) => s.selectedPoints));
 	const freeform = useEditorStore((s) => s.doc?.mode === "freeform");
 	const fitTarget = useEditorStore((s) => s.fitTarget);
 	const prefs = useSettingsStore(
@@ -103,7 +114,7 @@ export default function EditorCanvas({
 
 	const isPanning = tool === "hand" || isSpaceDown;
 	const isBrushTool = tool === "brush" || tool === "eraser";
-	const interactive = tool === "select" && !isSpaceDown;
+	const interactive = tool === "select" && !isSpaceDown && !editingPathId;
 	const isCreationTool =
 		CREATION_TOOLS.has(tool) && (freeform || (tool !== "text" && tool !== "frame"));
 
@@ -220,9 +231,16 @@ export default function EditorCanvas({
 		() =>
 			selectedIds.filter((id) => {
 				const layer = layers.find((l) => l.id === id);
-				return layer && layer.visible && !layer.locked && id !== cropLayerId && id !== editingTextId;
+				return (
+					layer &&
+					layer.visible &&
+					!layer.locked &&
+					id !== cropLayerId &&
+					id !== editingTextId &&
+					id !== editingPathId
+				);
 			}),
-		[selectedIds, layers, cropLayerId, editingTextId],
+		[selectedIds, layers, cropLayerId, editingTextId, editingPathId],
 	);
 	useEffect(() => {
 		const tr = trRef.current;
@@ -254,22 +272,66 @@ export default function EditorCanvas({
 		[stagePos.x, stagePos.y, zoom],
 	);
 
+	// --- Vector tools: pen and path point editing ---
+	const pen = usePenTool({ active: tool === "pen", zoom });
+	const editingPath = editingPathId
+		? (layers.find((l) => l.id === editingPathId && l.type === "path") as PathLayer | undefined)
+		: undefined;
+	const snapTargets = useCallback(() => {
+		const stage = stageRef.current;
+		const content = contentRef.current;
+		const doc = getEditor().doc;
+		const xs: number[] = [];
+		const ys: number[] = [];
+		if (!stage || !content || !doc) return { xs, ys };
+		if (doc.mode !== "freeform") {
+			xs.push(0, doc.canvas.width / 2, doc.canvas.width);
+			ys.push(0, doc.canvas.height / 2, doc.canvas.height);
+		}
+		for (const l of doc.layers) {
+			if (!l.visible || l.id === getEditor().editingPathId) continue;
+			const node = stage.findOne(`#${l.id}`);
+			if (!node) continue;
+			const r = node.getClientRect({ relativeTo: content, skipShadow: true });
+			xs.push(r.x, r.x + r.width / 2, r.x + r.width);
+			ys.push(r.y, r.y + r.height / 2, r.y + r.height);
+		}
+		return { xs, ys };
+	}, []);
+	const pathEditor = usePathEditor({ layer: editingPath, zoom, setGuides, snapTargets });
+
+	// Leave path edit mode when the path goes away or something else gets selected.
+	useEffect(() => {
+		if (!editingPathId) return;
+		const layer = layers.find((l) => l.id === editingPathId);
+		const stillSelected = selectedIds.length === 1 && selectedIds[0] === editingPathId;
+		if (!layer || layer.type !== "path" || layer.locked || !layer.visible || !stillSelected || tool !== "select") {
+			getEditor().setEditingPathId(null);
+		}
+	}, [editingPathId, layers, selectedIds, tool]);
+
 	const handlers: LayerNodeHandlers = useMemo(
 		() => ({
-			onSelect: (e, layer) => {
-				if (getEditor().tool !== "select") return;
+			onSelect: (e, hit) => {
 				const editor = getEditor();
+				if (editor.tool !== "select" || !editor.doc) return;
+				const layers = editor.doc.layers;
 				const evt = e.evt as MouseEvent;
+				const inGroup = ancestorsOf(layers, hit.id)[0]?.type === "group";
+				const mod = evt.metaKey || evt.ctrlKey;
+				// Figma: clicks pick the outer-most group; Ctrl/Cmd-click selects inside it.
+				const target = clickTarget(layers, hit.id, editor.selectedIds, mod && inGroup);
 				if (evt.button === 2) {
-					if (!editor.selectedIds.includes(layer.id)) editor.select([layer.id]);
+					if (!editor.selectedIds.includes(target)) editor.select([target]);
 					return;
 				}
-				if (evt.shiftKey || evt.metaKey || evt.ctrlKey) {
-					editor.toggleSelect(layer.id);
-				} else if (!editor.selectedIds.includes(layer.id)) {
-					editor.select([layer.id]);
+				if (evt.shiftKey || (mod && !inGroup)) {
+					editor.toggleSelect(target);
+				} else if (!editor.selectedIds.includes(target)) {
+					editor.select([target]);
 				}
-				e.cancelBubble = true;
+				// When a group was picked, let the press bubble up so the group drags.
+				if (target === hit.id) e.cancelBubble = true;
 			},
 			onDragStart: (e, layer) => {
 				const editor = getEditor();
@@ -279,10 +341,13 @@ export default function EditorCanvas({
 				if (!editor.selectedIds.includes(layer.id)) editor.select([layer.id]);
 				const startPositions = new Map<string, { x: number; y: number }>();
 				const doc = editor.doc;
-				// Moving a frame moves everything inside it.
-				const moving = new Set(ids);
-				for (const id of ids) {
-					for (const child of doc ? childrenOf(doc.layers, id) : []) moving.add(child.id);
+				// Layers inside a moving group move with it; frames carry their direct
+				// children (which may be groups) along.
+				const moving = new Set(doc ? topmostIds(doc.layers, ids) : ids);
+				for (const id of [...moving]) {
+					const isFrameLayer = doc?.layers.find((l) => l.id === id)?.type === "frame";
+					if (!isFrameLayer || !doc) continue;
+					for (const child of childrenOf(doc.layers, id)) moving.add(child.id);
 				}
 				for (const id of moving) {
 					const node = stage.findOne(`#${id}`);
@@ -299,10 +364,20 @@ export default function EditorCanvas({
 				const node = e.target;
 				const state = dragState.current;
 				const movingIds = new Set([layer.id, ...(state?.startPositions.keys() ?? [])]);
+				// Don't snap to what's moving along (children of moving frames and groups).
+				for (const id of [...movingIds]) {
+					for (const d of descendantsOf(doc.layers, id)) movingIds.add(d.id);
+				}
 				const { snapToObjects, snapThreshold } = getSettings();
 				if (snapToObjects && !(e.evt as MouseEvent).altKey) {
 					const others = doc.layers
-						.filter((l) => l.visible && !movingIds.has(l.id))
+						// Groups around the dragged layer contain it, so they'd always "snap".
+						.filter(
+							(l) =>
+								l.visible &&
+								!movingIds.has(l.id) &&
+								!(l.type === "group" && isInside(doc.layers, layer.id, l.id)),
+						)
 						.map((l) => stage.findOne(`#${l.id}`))
 						.filter((n): n is Konva.Node => !!n);
 					const nextGuides = snapNode({
@@ -324,23 +399,48 @@ export default function EditorCanvas({
 			},
 			onDragEnd: (e, layer) => {
 				const stage = stageRef.current;
+				const doc = getEditor().doc;
 				setGuides([]);
 				const state = dragState.current;
 				dragState.current = null;
-				const px = getSettings().snapToPixels ? Math.round : (v: number) => v;
-				const patches = [{ id: layer.id, patch: { x: px(e.target.x()), y: px(e.target.y()) } }];
-				if (state && stage) {
-					for (const id of state.startPositions.keys()) {
-						const node = stage.findOne(`#${id}`);
-						if (node) patches.push({ id, patch: { x: px(node.x()), y: px(node.y()) } });
-					}
-				}
-				getEditor().updateLayers(patches);
 				setSuspendClip(false);
+				if (!stage || !doc) return;
+				const px = getSettings().snapToPixels ? Math.round : (v: number) => v;
+				const moved: { id: string; node: Konva.Node }[] = [{ id: layer.id, node: e.target }];
+				for (const id of state?.startPositions.keys() ?? []) {
+					const node = stage.findOne(`#${id}`);
+					if (node) moved.push({ id, node });
+				}
+				const patches: { id: string; patch: Partial<Layer> }[] = [];
+				const groupNodes: Konva.Node[] = [];
+				for (const { id, node } of moved) {
+					const current = doc.layers.find((l) => l.id === id);
+					if (!current) continue;
+					const x = px(node.x());
+					const y = px(node.y());
+					// A group's node offset is applied to its children by the store.
+					if (current.type === "group") groupNodes.push(node);
+					if (x !== current.x || y !== current.y) patches.push({ id, patch: { x, y } });
+				}
+				if (patches.length > 0) getEditor().updateLayers(patches);
 				// FreeForm: dropping a layer into (or out of) a frame reparents it.
-				getEditor().reparentLayers(patches.map((p) => p.id));
+				getEditor().reparentLayers(moved.map((m) => m.id));
+				// Groups always sit at the origin; their children now hold the move.
+				for (const node of groupNodes) node.position({ x: 0, y: 0 });
 			},
-			onDoubleClick: (_e, layer) => {
+			onDoubleClick: (_e, hit) => {
+				const editor = getEditor();
+				if (!editor.doc) return;
+				// Double-clicking inside a group steps one level into it.
+				const target = doubleClickTarget(editor.doc.layers, hit.id, editor.selectedIds);
+				if (target !== hit.id) {
+					editor.select([target]);
+					return;
+				}
+				const layer = hit;
+				if (layer.type === "path" && !layer.locked) {
+					getEditor().setEditingPathId(layer.id);
+				}
 				if (layer.type === "text" && !layer.locked) {
 					getEditor().select([layer.id]);
 					getEditor().setEditingTextId(layer.id);
@@ -350,7 +450,12 @@ export default function EditorCanvas({
 					getEditor().setCropLayerId(layer.id);
 				}
 			},
-			onHover: (layer) => setHovered(layer),
+			onHover: (hit) => {
+				const editor = getEditor();
+				if (!hit || !editor.doc) return setHovered(null);
+				const id = clickTarget(editor.doc.layers, hit.id, editor.selectedIds);
+				setHovered(editor.doc.layers.find((l) => l.id === id) ?? null);
+			},
 		}),
 		[],
 	);
@@ -380,6 +485,13 @@ export default function EditorCanvas({
 		for (const node of tr.nodes()) {
 			const layer = doc.layers.find((l) => l.id === node.id());
 			if (!layer) continue;
+			if (layer.type === "group") {
+				// Bake the group's new transform into its children, then reset it.
+				const m = node.getTransform().getMatrix() as Matrix;
+				node.setAttrs({ x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, skewX: 0, skewY: 0 });
+				patches.push(...transformDescendants(doc.layers, layer.id, m));
+				continue;
+			}
 			const sx = node.scaleX();
 			const sy = node.scaleY();
 			const ax = Math.abs(sx);
@@ -427,6 +539,19 @@ export default function EditorCanvas({
 				});
 				continue;
 			}
+			if (layer.type === "path") {
+				// Resizing scales the anchors themselves, so the geometry stays editable.
+				patches.push({
+					id: layer.id,
+					patch: {
+						...base,
+						width: layer.width * ax,
+						height: layer.height * ay,
+						subpaths: scaleSubpaths(layer.subpaths, ax, ay),
+					} as Partial<PathLayer>,
+				});
+				continue;
+			}
 			const isLine = layer.type === "shape" && (layer.shape === "line" || layer.shape === "arrow");
 			patches.push({
 				id: layer.id,
@@ -450,6 +575,16 @@ export default function EditorCanvas({
 		if (!pos) return;
 
 		if (isPanning) return;
+
+		const modifiers = { shiftKey: !!evt.shiftKey, altKey: !!evt.altKey };
+		if (tool === "pen") {
+			if (evt.button !== 2) pen.onMouseDown(toArtboard(pos), modifiers);
+			return;
+		}
+		if (editingPath && tool === "select") {
+			if (evt.button !== 2) pathEditor.onMouseDown(toArtboard(pos), modifiers);
+			return;
+		}
 
 		if (isBrushTool) {
 			const layerId = getOrCreateDrawingLayer();
@@ -490,6 +625,16 @@ export default function EditorCanvas({
 		if (!stage) return;
 		const pos = stage.getPointerPosition();
 		if (!pos) return;
+		const moveEvt = e.evt as MouseEvent;
+		const modifiers = { shiftKey: !!moveEvt.shiftKey, altKey: !!moveEvt.altKey };
+		if (tool === "pen") {
+			pen.onMouseMove(toArtboard(pos), modifiers);
+			return;
+		}
+		if (editingPath && tool === "select") {
+			pathEditor.onMouseMove(toArtboard(pos), modifiers);
+			return;
+		}
 		if (creation) {
 			const p = toArtboard(pos);
 			const evt = e.evt as MouseEvent;
@@ -615,6 +760,14 @@ export default function EditorCanvas({
 	};
 
 	const handleStageMouseUp = (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
+		if (tool === "pen") {
+			pen.onMouseUp();
+			return;
+		}
+		if (editingPath && tool === "select") {
+			pathEditor.onMouseUp({ shiftKey: !!(e.evt as MouseEvent).shiftKey, altKey: false });
+			return;
+		}
 		if (creation) {
 			const c = creation;
 			setCreation(null);
@@ -769,7 +922,7 @@ export default function EditorCanvas({
 		? "grab"
 		: isBrushTool
 			? "none"
-			: isCreationTool
+			: isCreationTool || tool === "pen"
 				? tool === "text"
 					? "text"
 					: "crosshair"
@@ -789,7 +942,9 @@ export default function EditorCanvas({
 				const hit = pos ? stage.getIntersection(pos) : null;
 				let node: Konva.Node | null = hit;
 				while (node && !node.hasName("layer")) node = node.getParent();
-				const id = node?.id() ?? null;
+				const doc = getEditor().doc;
+				const hitId = node?.id() ?? null;
+				const id = hitId && doc ? clickTarget(doc.layers, hitId, getEditor().selectedIds) : hitId;
 				if (id && !getEditor().selectedIds.includes(id)) getEditor().select([id]);
 				onContextMenuLayer?.(id);
 			}}
@@ -817,6 +972,10 @@ export default function EditorCanvas({
 					onTouchMove={handleStageMouseMove}
 					onMouseUp={handleStageMouseUp}
 					onTouchEnd={handleStageMouseUp}
+					onDblClick={() => {
+						const pos = stageRef.current?.getPointerPosition();
+						if (pos && editingPath && tool === "select") pathEditor.onDoubleClick(toArtboard(pos));
+					}}
 					onWheel={handleWheel}
 				>
 					{!freeform && (
@@ -849,28 +1008,16 @@ export default function EditorCanvas({
 								? {}
 								: { clipX: 0, clipY: 0, clipWidth: canvas.width, clipHeight: canvas.height })}
 						>
-							{freeform ? (
-								<FreeformContent
-									layers={layers}
-									interactive={interactive}
-									hiddenIds={[cropLayerId, editingTextId]}
-									cacheRatio={cacheRatio}
-									handlers={handlers}
-									suspendClip={suspendClip}
-									showLayoutGrids={prefs.showLayoutGrids}
-								/>
-							) : (
-								layers.map((layer) => (
-									<LayerNode
-										key={layer.id}
-										layer={layer}
-										interactive={interactive}
-										hidden={layer.id === cropLayerId || layer.id === editingTextId}
-										cacheRatio={cacheRatio}
-										handlers={handlers}
-									/>
-								))
-							)}
+							<LayerTree
+								layers={layers}
+								selectedIds={selectedIds}
+								interactive={interactive}
+								hiddenIds={[cropLayerId, editingTextId]}
+								cacheRatio={cacheRatio}
+								handlers={handlers}
+								suspendClip={suspendClip}
+								showLayoutGrids={prefs.showLayoutGrids}
+							/>
 						</Group>
 					</KLayer>
 					<KLayer name="ui">
@@ -905,6 +1052,15 @@ export default function EditorCanvas({
 							/>
 						))}
 						{cropLayer?.type === "image" && <CropOverlay layer={cropLayer} zoom={zoom} />}
+						{pen.overlay}
+						{editingPath && (
+							<PathEditOverlay
+								layer={editingPath}
+								selectedPoints={selectedPoints}
+								zoom={zoom}
+								marquee={pathEditor.marquee}
+							/>
+						)}
 						<Transformer
 							ref={trRef}
 							visible={tool === "select"}
@@ -933,7 +1089,9 @@ export default function EditorCanvas({
 							onTransform={handleTransform}
 							onTransformEnd={handleTransformEnd}
 							boundBoxFunc={(oldBox, newBox) =>
-								Math.abs(newBox.width) < 4 || Math.abs(newBox.height) < (isLineSelected ? 0 : 4)
+								// Thin boxes (straight paths) may stay thin; others can't collapse.
+								(Math.abs(newBox.width) < 4 && Math.abs(oldBox.width) >= 4) ||
+								(Math.abs(newBox.height) < (isLineSelected ? 0 : 4) && Math.abs(oldBox.height) >= 4)
 									? oldBox
 									: newBox
 							}
@@ -1097,9 +1255,13 @@ function CreationPreview({
 	);
 }
 
-/** Renders FreeForm content: top-level layers, with frames wrapping their children. */
-function FreeformContent({
+/**
+ * Renders the layer tree (both modes): top-level layers in order, with frames
+ * clipping their children and groups wrapping theirs, at any depth.
+ */
+function LayerTree({
 	layers,
+	selectedIds,
 	interactive,
 	hiddenIds,
 	cacheRatio,
@@ -1108,6 +1270,7 @@ function FreeformContent({
 	showLayoutGrids,
 }: {
 	layers: Layer[];
+	selectedIds: string[];
 	interactive: boolean;
 	hiddenIds: (string | null)[];
 	cacheRatio: number;
@@ -1115,41 +1278,51 @@ function FreeformContent({
 	suspendClip: boolean;
 	showLayoutGrids: boolean;
 }) {
-	const frameIds = new Set(layers.filter((l) => l.type === "frame").map((l) => l.id));
-	const node = (layer: Layer) => (
-		<LayerNode
-			key={layer.id}
-			layer={layer}
-			interactive={interactive}
-			hidden={hiddenIds.includes(layer.id)}
-			cacheRatio={cacheRatio}
-			handlers={handlers}
-		/>
-	);
-	return (
-		<>
-			{layers
-				.filter((l) => !l.parentId || !frameIds.has(l.parentId))
-				.map((layer) =>
-					layer.type === "frame" ? (
-						<FrameNode
-							key={layer.id}
-							layer={layer}
-							interactive={interactive}
-							hidden={false}
-							cacheRatio={cacheRatio}
-							handlers={handlers}
-							suspendClip={suspendClip}
-							showLayoutGrids={showLayoutGrids}
-						>
-							{layers.filter((l) => l.parentId === layer.id).map(node)}
-						</FrameNode>
-					) : (
-						node(layer)
-					),
-				)}
-		</>
-	);
+	const ids = new Set(layers.map((l) => l.id));
+	const byParent = new Map<string, Layer[]>();
+	for (const layer of layers) {
+		// Missing parents (e.g. a frame that didn't paste) make a layer top-level.
+		const key = layer.parentId && ids.has(layer.parentId) && layer.parentId !== layer.id ? layer.parentId : "";
+		const list = byParent.get(key);
+		if (list) list.push(layer);
+		else byParent.set(key, [layer]);
+	}
+	const entered = enteredGroups(layers, selectedIds);
+	const render = (layer: Layer, depth: number): React.ReactNode => {
+		if (depth > 64) return null;
+		const common = {
+			interactive,
+			// Inside a group that hasn't been entered, the group drags instead.
+			draggable: interactive && isReachable(layers, layer.id, entered),
+			hidden: hiddenIds.includes(layer.id),
+			cacheRatio,
+			handlers,
+		};
+		const children = () => (byParent.get(layer.id) ?? []).map((child) => render(child, depth + 1));
+		if (layer.type === "frame") {
+			return (
+				<FrameNode
+					key={layer.id}
+					layer={layer}
+					{...common}
+					hidden={false}
+					suspendClip={suspendClip}
+					showLayoutGrids={showLayoutGrids}
+				>
+					{children()}
+				</FrameNode>
+			);
+		}
+		if (layer.type === "group") {
+			return (
+				<GroupNode key={layer.id} layer={layer} {...common}>
+					{children()}
+				</GroupNode>
+			);
+		}
+		return <LayerNode key={layer.id} layer={layer} {...common} />;
+	};
+	return <>{(byParent.get("") ?? []).map((layer) => render(layer, 0))}</>;
 }
 
 /** Frame names above each frame, like Figma. Click to select, drag to move. */
@@ -1243,6 +1416,14 @@ function HoverOutline({
 }) {
 	const node = stage?.findOne(`#${layerId}`);
 	if (!node) return null;
+	if (node.hasName("group")) {
+		// Groups have no box of their own: outline what's inside.
+		const content = stage?.findOne(".content-group") as Konva.Group | undefined;
+		const r = node.getClientRect({ relativeTo: content, skipShadow: true });
+		return (
+			<Rect {...r} stroke={ACCENT} strokeWidth={1.5 / zoom} dash={[4 / zoom, 3 / zoom]} listening={false} />
+		);
+	}
 	const t = node.getTransform();
 	const w = node.width();
 	const h = node.height();

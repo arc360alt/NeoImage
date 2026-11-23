@@ -22,6 +22,7 @@ import {
 	CircleIcon,
 	MinusSignIcon,
 	ImageAdd02Icon,
+	PenTool03Icon,
 } from "@hugeicons/core-free-icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -92,6 +93,7 @@ const FREEFORM_TOOLS: typeof TOOLS = [
 	{ id: "rect", label: "Rectangle", icon: SquareIcon },
 	{ id: "ellipse", label: "Ellipse", icon: CircleIcon },
 	{ id: "line", label: "Line", icon: MinusSignIcon },
+	{ id: "pen", label: "Pen", icon: PenTool03Icon },
 	{ id: "text", label: "Text", icon: TextIcon },
 	{ id: "brush", label: "Brush", icon: PaintBrush02Icon },
 	{ id: "eraser", label: "Eraser", icon: Eraser01Icon },
@@ -201,7 +203,7 @@ function PreviewToolbar() {
 			{tools.map((t, i) => {
 				const isActive = tool === t.id;
 				// Separate navigation, creation and painting groups like Figma's toolbar.
-				const divider = freeform && (i === 2 || i === 7 || i === 9);
+				const divider = freeform && (i === 2 || i === 8 || i === 10);
 				return (
 					<div key={t.id} className="flex items-center gap-0.5">
 					{divider && <div className="bg-border mx-1 h-5 w-px" />}

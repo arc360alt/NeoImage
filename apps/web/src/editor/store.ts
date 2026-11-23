@@ -11,7 +11,8 @@ import type {
 } from "./types";
 import { getProject, saveProject } from "@/storage/projects";
 import { listAssets } from "@/storage/assets";
-import { childrenOf, isFreeform, parentFor } from "./freeform";
+import { descendantsOf, isFreeform, isInside, layerBounds, parentFor, topmostIds } from "./freeform";
+import { resizePath } from "./path";
 
 type Snapshot = { canvas: CanvasSettings; layers: Layer[] };
 
@@ -36,6 +37,10 @@ interface EditorState {
 	brush: BrushSettings;
 	cropLayerId: string | null;
 	editingTextId: string | null;
+	/** Path in point-edit mode (double-click a path, Esc to leave). */
+	editingPathId: string | null;
+	/** Selected anchors while editing a path, as "subpath:anchor" keys. */
+	selectedPoints: string[];
 
 	zoom: number;
 	/** Bumped to ask the canvas to re-fit the artboard into view. */
@@ -65,6 +70,8 @@ interface EditorState {
 	requestFit: (target?: { x: number; y: number; width: number; height: number }) => void;
 	setCropLayerId: (id: string | null) => void;
 	setEditingTextId: (id: string | null) => void;
+	setEditingPathId: (id: string | null) => void;
+	setSelectedPoints: (keys: string[]) => void;
 
 	select: (ids: string[]) => void;
 	toggleSelect: (id: string) => void;
@@ -112,6 +119,24 @@ function snapshotOf(doc: ProjectDoc): Snapshot {
 	return { canvas: doc.canvas, layers: doc.layers };
 }
 
+/**
+ * Applies a patch, keeping derived geometry in sync: resizing a path (from
+ * the properties panel, flips, etc.) scales its anchors to the new size.
+ */
+function patchLayer(layer: Layer, patch: Partial<Layer>): Layer {
+	if (
+		layer.type === "path" &&
+		!("subpaths" in patch) &&
+		(("width" in patch && patch.width !== layer.width) || ("height" in patch && patch.height !== layer.height))
+	) {
+		const p = patch as Partial<typeof layer>;
+		const width = p.width ?? layer.width;
+		const height = p.height ?? layer.height;
+		return { ...layer, ...p, subpaths: resizePath(layer, width, height) };
+	}
+	return { ...layer, ...patch } as Layer;
+}
+
 function cloneLayer(layer: Layer): Layer {
 	return structuredClone(layer);
 }
@@ -146,6 +171,8 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 		brush: { color: "#ef4444", size: 16, opacity: 1, mode: "brush" },
 		cropLayerId: null,
 		editingTextId: null,
+		editingPathId: null,
+		selectedPoints: [],
 
 		zoom: 1,
 		fitRequest: 0,
@@ -169,6 +196,8 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 				pending: null,
 				cropLayerId: null,
 				editingTextId: null,
+				editingPathId: null,
+				selectedPoints: [],
 				tool: "select",
 			});
 			try {
@@ -208,6 +237,8 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 				pending: null,
 				cropLayerId: null,
 				editingTextId: null,
+				editingPathId: null,
+				selectedPoints: [],
 			}),
 
 		saveNow: async () => {
@@ -258,6 +289,8 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 				tool,
 				cropLayerId: tool === "crop" ? cropLayerId : null,
 				editingTextId: tool === "select" ? editingTextId : null,
+				editingPathId: tool === "select" ? get().editingPathId : null,
+				selectedPoints: tool === "select" ? get().selectedPoints : [],
 			});
 		},
 		setBrush: (patch) => set((s) => ({ brush: { ...s.brush, ...patch } })),
@@ -267,6 +300,14 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 		setCropLayerId: (id) =>
 			set({ cropLayerId: id, tool: id ? "crop" : "select" }),
 		setEditingTextId: (id) => set({ editingTextId: id }),
+		setEditingPathId: (id) =>
+			set((s) => ({
+				editingPathId: id,
+				selectedPoints: [],
+				selectedIds: id ? [id] : s.selectedIds,
+				editingTextId: id ? null : s.editingTextId,
+			})),
+		setSelectedPoints: (keys) => set({ selectedPoints: keys }),
 
 		select: (ids) => set({ selectedIds: ids }),
 		toggleSelect: (id) =>
@@ -279,9 +320,11 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 		selectAll: () => {
 			const { doc } = get();
 			if (!doc) return;
+			const ids = new Set(doc.layers.map((l) => l.id));
 			set({
 				selectedIds: doc.layers
-					.filter((l) => l.visible && !l.locked && !(isFreeform(doc) && l.parentId))
+					// Top-level only: frame and group contents come along with their parent.
+					.filter((l) => l.visible && !l.locked && !(l.parentId && ids.has(l.parentId)))
 					.map((l) => l.id),
 			});
 		},
@@ -323,6 +366,8 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 					previous.layers.some((l) => l.id === id),
 				),
 				cropLayerId: null,
+				editingPathId: previous.layers.some((l) => l.id === s.editingPathId) ? s.editingPathId : null,
+				selectedPoints: [],
 			}));
 		},
 
@@ -339,6 +384,8 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 					next.layers.some((l) => l.id === id),
 				),
 				cropLayerId: null,
+				editingPathId: next.layers.some((l) => l.id === s.editingPathId) ? s.editingPathId : null,
+				selectedPoints: [],
 			}));
 		},
 
@@ -364,12 +411,28 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 			get().updateLayers([{ id, patch }], options),
 
 		updateLayers: (patches, options) => {
+			const layersNow = get().doc?.layers ?? [];
 			const byId = new Map(patches.map((p) => [p.id, p.patch]));
+			// Groups stay at the origin: moving one moves everything inside it.
+			for (const { id, patch } of patches) {
+				const layer = layersNow.find((l) => l.id === id);
+				if (layer?.type !== "group" || (patch.x === undefined && patch.y === undefined)) continue;
+				const dx = (patch.x ?? layer.x) - layer.x;
+				const dy = (patch.y ?? layer.y) - layer.y;
+				const { x: _x, y: _y, ...rest } = patch;
+				byId.set(id, rest);
+				if (dx === 0 && dy === 0) continue;
+				for (const child of descendantsOf(layersNow, id)) {
+					if (child.type === "group") continue;
+					const own = byId.get(child.id) ?? {};
+					byId.set(child.id, { ...own, x: (own.x ?? child.x) + dx, y: (own.y ?? child.y) + dy });
+				}
+			}
 			mutateDoc(
 				(doc) => ({
 					layers: doc.layers.map((layer) => {
 						const patch = byId.get(layer.id);
-						return patch ? ({ ...layer, ...patch } as Layer) : layer;
+						return patch ? patchLayer(layer, patch) : layer;
 					}),
 				}),
 				options,
@@ -379,10 +442,10 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 		removeLayers: (ids) => {
 			if (ids.length === 0) return;
 			const layersNow = get().doc?.layers ?? [];
-			// Deleting a frame deletes everything inside it.
+			// Deleting a frame or group deletes everything inside it.
 			const idSet = new Set(ids);
 			for (const id of ids) {
-				for (const child of childrenOf(layersNow, id)) idSet.add(child.id);
+				for (const child of descendantsOf(layersNow, id)) idSet.add(child.id);
 			}
 			mutateDoc((doc) => ({
 				layers: doc.layers.filter((l) => !idSet.has(l.id)),
@@ -396,45 +459,62 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 		duplicateLayers: (ids) => {
 			const { doc } = get();
 			if (!doc || ids.length === 0) return;
-			const idSet = new Set(ids);
+			// Duplicating a frame or group duplicates what's inside it; nested picks are covered.
+			const roots = new Set(topmostIds(doc.layers, ids));
 			const newIds: string[] = [];
 			mutateDoc((d) => {
 				const layers: Layer[] = [];
 				const frameCopies: Layer[] = [];
 				// Duplicated frames move as a group into free space right of all content.
-				const dupFrames = d.layers.filter((l) => idSet.has(l.id) && l.type === "frame");
+				const dupFrames = d.layers.filter((l) => roots.has(l.id) && l.type === "frame");
 				const contentRight = Math.max(
 					...d.layers
 						.filter((l) => l.type === "frame" || !l.parentId)
-						.map((l) => l.x + Math.max(l.width, 0)),
+						.map((l) => {
+							const b = layerBounds(l, d.layers);
+							return b.x + b.width;
+						}),
 				);
 				const groupLeft = Math.min(...dupFrames.map((l) => l.x));
 				const frameDx = dupFrames.length ? contentRight + 80 - groupLeft : 0;
+				/** Copies a layer and its subtree, offset by (dx, dy); groups stay at 0. */
+				const copyTree = (layer: Layer, dx: number, dy: number) => {
+					const idMap = new Map<string, string>();
+					const tree = [layer, ...descendantsOf(d.layers, layer.id)];
+					for (const l of tree) idMap.set(l.id, nanoid(10));
+					// Keep the original stacking order inside the copy.
+					const ordered = d.layers.filter((l) => idMap.has(l.id));
+					const rootId = idMap.get(layer.id) as string;
+					const copies = ordered.map((l) => {
+						const copy = cloneLayer(l);
+						copy.id = idMap.get(l.id) as string;
+						if (l.id === layer.id) {
+							copy.name = `${l.name} copy`;
+							copy.locked = false;
+						} else if (l.parentId) {
+							copy.parentId = idMap.get(l.parentId) ?? l.parentId;
+						}
+						if (copy.type !== "group") {
+							copy.x += dx;
+							copy.y += dy;
+						}
+						return copy;
+					});
+					return { copies, rootId };
+				};
 				for (const layer of d.layers) {
 					layers.push(layer);
-					if (!idSet.has(layer.id)) continue;
-					const copy = cloneLayer(layer);
-					copy.id = nanoid(10);
-					copy.name = `${layer.name} copy`;
-					copy.locked = false;
-					newIds.push(copy.id);
+					if (!roots.has(layer.id)) continue;
 					if (layer.type === "frame") {
 						// Figma-style: a duplicated frame lands to the right, with its contents.
-						const dx = frameDx;
-						copy.x += dx;
-						frameCopies.push(copy);
-						for (const child of childrenOf(d.layers, layer.id)) {
-							const childCopy = cloneLayer(child);
-							childCopy.id = nanoid(10);
-							childCopy.parentId = copy.id;
-							childCopy.x += dx;
-							frameCopies.push(childCopy);
-						}
+						const { copies, rootId } = copyTree(layer, frameDx, 0);
+						newIds.push(rootId);
+						frameCopies.push(...copies);
 						continue;
 					}
-					copy.x += 24;
-					copy.y += 24;
-					layers.push(copy);
+					const { copies, rootId } = copyTree(layer, 24, 24);
+					newIds.push(rootId);
+					layers.push(...copies);
 				}
 				return { layers: [...layers, ...frameCopies] };
 			});
@@ -447,7 +527,13 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 				const from = layers.findIndex((l) => l.id === id);
 				if (from === -1) return {};
 				let [layer] = layers.splice(from, 1);
-				if (parentId !== undefined && layer.type !== "frame") {
+				// Frames stay top-level, and nothing can move inside itself.
+				const target = parentId ? doc.layers.find((l) => l.id === parentId) : undefined;
+				const cycle = !!parentId && isInside(doc.layers, parentId, id);
+				const valid =
+					parentId === null ||
+					(!!target && (target.type === "group" || target.type === "frame") && !cycle);
+				if (parentId !== undefined && layer.type !== "frame" && valid) {
 					layer = { ...layer, parentId: parentId ?? undefined } as Layer;
 				}
 				layers.splice(Math.max(0, Math.min(layers.length, toIndex)), 0, layer);
@@ -459,27 +545,41 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 			const { doc } = get();
 			if (!doc || ids.length === 0) return;
 			const idSet = new Set(ids);
+			// Stacking order only matters among siblings (same parent), so step over
+			// siblings rather than whatever happens to sit next in the array.
+			const ids2 = new Set(doc.layers.map((l) => l.id));
+			const parentKey = (l: Layer) => (l.parentId && ids2.has(l.parentId) ? l.parentId : "");
 			mutateDoc((d) => {
 				const layers = [...d.layers];
 				if (direction === "top" || direction === "bottom") {
 					const moving = layers.filter((l) => idSet.has(l.id));
-					const rest = layers.filter((l) => !idSet.has(l.id));
-					return {
-						layers: direction === "top" ? [...rest, ...moving] : [...moving, ...rest],
-					};
+					let next = layers.filter((l) => !idSet.has(l.id));
+					for (const layer of direction === "top" ? moving : [...moving].reverse()) {
+						const siblings = next
+							.map((l, i) => ({ l, i }))
+							.filter(({ l }) => parentKey(l) === parentKey(layer));
+						const at =
+							siblings.length === 0
+								? direction === "top"
+									? next.length
+									: 0
+								: direction === "top"
+									? siblings[siblings.length - 1].i + 1
+									: siblings[0].i;
+						next = [...next.slice(0, at), layer, ...next.slice(at)];
+					}
+					return { layers: next };
 				}
-				if (direction === "up") {
-					for (let i = layers.length - 2; i >= 0; i--) {
-						if (idSet.has(layers[i].id) && !idSet.has(layers[i + 1].id)) {
-							[layers[i], layers[i + 1]] = [layers[i + 1], layers[i]];
-						}
-					}
-				} else {
-					for (let i = 1; i < layers.length; i++) {
-						if (idSet.has(layers[i].id) && !idSet.has(layers[i - 1].id)) {
-							[layers[i], layers[i - 1]] = [layers[i - 1], layers[i]];
-						}
-					}
+				const step = direction === "up" ? 1 : -1;
+				const order = layers.map((_, i) => i);
+				if (step === 1) order.reverse();
+				for (const i of order) {
+					const layer = layers[i];
+					if (!idSet.has(layer.id)) continue;
+					let j = i + step;
+					while (j >= 0 && j < layers.length && parentKey(layers[j]) !== parentKey(layer)) j += step;
+					if (j < 0 || j >= layers.length || idSet.has(layers[j].id)) continue;
+					[layers[i], layers[j]] = [layers[j], layers[i]];
 				}
 				return { layers };
 			});
@@ -488,9 +588,11 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 		reparentLayers: (ids) => {
 			const { doc } = get();
 			if (!doc || !isFreeform(doc)) return;
+			const byId = new Map(doc.layers.map((l) => [l.id, l]));
 			const changes = ids
-				.map((id) => doc.layers.find((l) => l.id === id))
-				.filter((l): l is Layer => !!l && l.type !== "frame")
+				.map((id) => byId.get(id))
+				// Layers inside a group stay in it; the group itself is what moves between frames.
+				.filter((l): l is Layer => !!l && l.type !== "frame" && byId.get(l.parentId ?? "")?.type !== "group")
 				.map((layer) => ({ layer, parentId: parentFor(doc.layers, layer) }))
 				.filter(({ layer, parentId }) => layer.parentId !== parentId);
 			if (changes.length === 0) return;
@@ -522,7 +624,7 @@ export const useEditorStore = create<EditorState>()((set, get) => {
 			if (!doc) return;
 			const ids = new Set(selectedIds);
 			for (const id of selectedIds) {
-				for (const child of childrenOf(doc.layers, id)) ids.add(child.id);
+				for (const child of descendantsOf(doc.layers, id)) ids.add(child.id);
 			}
 			const layers = doc.layers.filter((l) => ids.has(l.id));
 			if (layers.length > 0) set({ clipboard: layers.map(cloneLayer) });

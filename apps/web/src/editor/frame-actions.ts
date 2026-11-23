@@ -2,19 +2,28 @@ import { toast } from "sonner";
 import { getEditor } from "./store";
 import { getSettings } from "./settings-store";
 import { createFrameLayer, solid } from "./defaults";
-import { childrenOf, isFreeform, layerBounds, nextFrameName, unionBounds } from "./freeform";
+import {
+	childrenOf,
+	frameOf,
+	isFreeform,
+	layerBounds,
+	nextFrameName,
+	topmostIds,
+	unionBounds,
+} from "./freeform";
 import type { FrameLayer, Layer } from "./types";
 
 /** Wraps the selected (non-frame) layers in a new frame that hugs them, like Figma's Ctrl+Alt+G. */
 export function frameSelection() {
 	const { doc, selectedIds } = getEditor();
 	if (!doc || !isFreeform(doc)) return;
-	const selected = doc.layers.filter((l) => selectedIds.includes(l.id) && l.type !== "frame");
+	const roots = new Set(topmostIds(doc.layers, selectedIds));
+	const selected = doc.layers.filter((l) => roots.has(l.id) && l.type !== "frame");
 	if (selected.length === 0) {
 		if (selectedIds.length > 0) toast.info("Frames can't be placed inside other frames");
 		return;
 	}
-	const bounds = unionBounds(selected.map(layerBounds));
+	const bounds = unionBounds(selected.map((l) => layerBounds(l, doc.layers)));
 	if (!bounds) return;
 	const settings = getSettings();
 	const x = Math.floor(bounds.x);
@@ -64,8 +73,8 @@ function targetFrames(): FrameLayer[] {
 	const ids = new Set<string>();
 	for (const id of selectedIds) {
 		const layer = doc.layers.find((l) => l.id === id);
-		if (layer?.type === "frame") ids.add(layer.id);
-		else if (layer?.parentId) ids.add(layer.parentId);
+		const frame = layer && frameOf(doc.layers, layer);
+		if (frame) ids.add(frame.id);
 	}
 	return doc.layers.filter((l): l is FrameLayer => l.type === "frame" && ids.has(l.id));
 }
@@ -77,7 +86,9 @@ export function fitFramesToContent(frames: FrameLayer[] = targetFrames()) {
 	const patches = frames
 		.map((frame) => {
 			const bounds = unionBounds(
-				childrenOf(doc.layers, frame.id).filter((l) => l.visible).map(layerBounds),
+				childrenOf(doc.layers, frame.id)
+					.filter((l) => l.visible)
+					.map((l) => layerBounds(l, doc.layers)),
 			);
 			if (!bounds) return null;
 			const x = Math.floor(bounds.x);
@@ -100,41 +111,54 @@ export function fitFramesToContent(frames: FrameLayer[] = targetFrames()) {
 	getEditor().updateLayers(patches);
 }
 
-/** Enter: select what's inside the selected frames, or edit the selected text. */
-export function selectChildren() {
+/**
+ * Enter: select what's inside the selected frames, edit the selected text, or
+ * enter point editing for the selected path. Returns false when there's nothing to do.
+ */
+export function selectChildren(): boolean {
 	const editor = getEditor();
 	const doc = editor.doc;
-	if (!doc) return;
+	if (!doc) return false;
 	const selected = doc.layers.filter((l) => editor.selectedIds.includes(l.id));
 	if (selected.length === 1 && selected[0].type === "text" && !selected[0].locked) {
 		editor.setEditingTextId(selected[0].id);
-		return;
+		return true;
+	}
+	if (selected.length === 1 && selected[0].type === "path" && !selected[0].locked) {
+		editor.setEditingPathId(selected[0].id);
+		return true;
 	}
 	const children = selected
-		.filter((l) => l.type === "frame")
-		.flatMap((frame) => childrenOf(doc.layers, frame.id))
+		.filter((l) => l.type === "frame" || l.type === "group")
+		.flatMap((parent) => childrenOf(doc.layers, parent.id))
 		.filter((l) => l.visible && !l.locked)
 		.map((l) => l.id);
-	if (children.length > 0) editor.select(children);
+	if (children.length === 0) return false;
+	editor.select(children);
+	return true;
 }
 
-/** Shift+Enter: select the frames that contain the selection. */
-export function selectParents() {
+/** Shift+Enter: select the frames or groups that contain the selection. */
+export function selectParents(): boolean {
 	const editor = getEditor();
 	const doc = editor.doc;
-	if (!doc) return;
+	if (!doc) return false;
 	const parents = new Set<string>();
 	for (const id of editor.selectedIds) {
 		const parentId = doc.layers.find((l) => l.id === id)?.parentId;
 		if (parentId && doc.layers.some((l) => l.id === parentId)) parents.add(parentId);
 	}
-	if (parents.size > 0) editor.select([...parents]);
+	if (parents.size === 0) return false;
+	editor.select([...parents]);
+	return true;
 }
 
 /** Fit the selected layers into view. */
 export function zoomToSelection() {
 	const { doc, selectedIds, requestFit } = getEditor();
 	if (!doc) return;
-	const bounds = unionBounds(doc.layers.filter((l) => selectedIds.includes(l.id)).map(layerBounds));
+	const bounds = unionBounds(
+		doc.layers.filter((l) => selectedIds.includes(l.id)).map((l) => layerBounds(l, doc.layers)),
+	);
 	if (bounds) requestFit(bounds);
 }

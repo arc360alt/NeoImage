@@ -6,7 +6,9 @@ import type {
 	Fill,
 	FrameLayer,
 	ImageLayer,
+	GroupLayer,
 	LayoutGrid,
+	PathLayer,
 	Shadow,
 	ShapeKind,
 	ShapeLayer,
@@ -180,5 +182,37 @@ export function createLayoutGrid(type: LayoutGrid["type"] = "grid"): LayoutGrid 
 		count: type === "grid" ? 0 : type === "columns" ? 5 : 3,
 		gutter: 20,
 		margin: type === "grid" ? 0 : 20,
+	};
+}
+
+export function createPathLayer(init: Partial<PathLayer> = {}): PathLayer {
+	return {
+		...base(),
+		type: "path",
+		name: "Vector",
+		width: 0,
+		height: 0,
+		subpaths: [],
+		fill: { type: "transparent" },
+		stroke: { enabled: true, color: "#111111", width: 2 },
+		fillRule: "nonzero",
+		...init,
+	};
+}
+
+export function createGroupLayer(init: Partial<GroupLayer> = {}): GroupLayer {
+	return {
+		...base(),
+		type: "group",
+		name: "Group",
+		...init,
+		// Groups never carry a transform of their own.
+		x: 0,
+		y: 0,
+		rotation: 0,
+		scaleX: 1,
+		scaleY: 1,
+		width: 0,
+		height: 0,
 	};
 }

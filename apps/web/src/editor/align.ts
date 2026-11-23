@@ -1,7 +1,7 @@
 import type Konva from "konva";
 import { getStage } from "./stage";
 import { getEditor } from "./store";
-import { frameRect, isFreeform } from "./freeform";
+import { frameOf, frameRect, isFreeform } from "./freeform";
 
 /** Single layers align to their frame (FreeForm), the artboard, or the viewport. */
 function alignTarget(id: string) {
@@ -9,8 +9,8 @@ function alignTarget(id: string) {
 	if (!doc) return { x: 0, y: 0, width: 0, height: 0 };
 	if (!isFreeform(doc)) return { x: 0, y: 0, width: doc.canvas.width, height: doc.canvas.height };
 	const layer = doc.layers.find((l) => l.id === id);
-	const parent = layer?.parentId ? doc.layers.find((l) => l.id === layer.parentId) : undefined;
-	if (parent?.type === "frame") return frameRect(parent);
+	const frame = layer && layer.type !== "frame" ? frameOf(doc.layers, layer) : undefined;
+	if (frame) return frameRect(frame);
 	return getRects([id])[0]?.rect ?? { x: 0, y: 0, width: 0, height: 0 };
 }
 

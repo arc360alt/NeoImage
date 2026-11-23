@@ -15,6 +15,8 @@ import {
 	Copy01Icon,
 	HashtagIcon,
 	Download04Icon,
+	PenTool03Icon,
+	GroupItemsIcon,
 } from "@hugeicons/core-free-icons";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -41,13 +43,17 @@ import {
 	AlignSection,
 	BlendingSection,
 	EffectsTab,
+	GroupTab,
 	ImageTab,
+	PathTab,
 	ShapeTab,
 	TextTab,
 	TransformTab,
+	VectorSection,
 } from "./tabs";
 import { ExportSection, FrameTab, PageProperties } from "./freeform";
 import { frameSelection } from "@/editor/frame-actions";
+import { groupSelection } from "@/editor/group-actions";
 import { useShortcut } from "@/editor/use-shortcut";
 
 type TabId = "content" | "adjust" | "transform" | "effects" | "export";
@@ -64,6 +70,8 @@ const CONTENT_TAB: Record<LayerType, TabDef | null> = {
 	text: { id: "content", label: "Text", icon: TextIcon, render: (l) => l.type === "text" && <TextTab layer={l} /> },
 	shape: { id: "content", label: "Shape", icon: ShapesIcon, render: (l) => l.type === "shape" && <ShapeTab layer={l} /> },
 	drawing: null,
+	path: { id: "content", label: "Vector", icon: PenTool03Icon, render: (l) => l.type === "path" && <PathTab layer={l} /> },
+	group: { id: "content", label: "Group", icon: GroupItemsIcon, render: (l) => l.type === "group" && <GroupTab layer={l} /> },
 	frame: { id: "content", label: "Frame", icon: HashtagIcon, render: (l) => l.type === "frame" && <FrameTab layer={l} /> },
 };
 
@@ -94,6 +102,7 @@ export function PropertiesPanel() {
 	const freeform = useEditorStore((s) => s.doc?.mode === "freeform");
 	const { activeTabPerType, setActiveTab } = usePropertiesStore();
 	const frameShortcut = useShortcut("frame.wrap");
+	const groupShortcut = useShortcut("arrange.group");
 
 	if (selected.length === 0) {
 		return (
@@ -129,6 +138,18 @@ export function PropertiesPanel() {
 							</SectionContent>
 						</Section>
 					)}
+					{selected.some((l) => l.type !== "frame") && (
+						<Section sectionKey="multi-group">
+							<SectionContent className="pt-4">
+								<Button variant="outline" className="w-full gap-2" onClick={groupSelection}>
+									<HugeiconsIcon icon={GroupItemsIcon} />
+									Group selection
+									{groupShortcut && <span className="text-muted-foreground ml-auto text-xs">{groupShortcut}</span>}
+								</Button>
+							</SectionContent>
+						</Section>
+					)}
+					<VectorSection layers={selected} />
 					<AlignSection multiple />
 					<BlendingSection layers={selected} />
 					{freeform && <ExportSection layers={selected} />}
@@ -161,11 +182,14 @@ export function PropertiesPanel() {
 
 	const layer = selected[0];
 	const contentTab = CONTENT_TAB[layer.type];
-	// Frames carry their own position/size controls and don't take filters.
+	// Frames carry their own position/size controls and don't take filters;
+	// groups have no pixels of their own, so their tab holds everything.
 	const baseTabs =
 		layer.type === "frame"
 			? COMMON_TABS.filter((t) => t.id === "effects")
-			: COMMON_TABS;
+			: layer.type === "group"
+				? []
+				: COMMON_TABS;
 	const withContent = contentTab ? [contentTab, ...baseTabs] : baseTabs;
 	const visibleTabs =
 		freeform && layer.type !== "frame" ? [...withContent, EXPORT_TAB] : withContent;

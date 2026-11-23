@@ -14,6 +14,7 @@ Two project types:
 
 - **Default**: one fixed-size canvas, Canva-style.
 - **FreeForm**: an infinite canvas with frames, Figma-style. Draw frames (F), rectangles (R), ellipses (O), lines (L) and text (T); layers inside a frame are clipped to it and move with it; a layer tree on the left; and a Design panel on the right with per-frame export settings (scale, format, suffix). Exporting several files downloads a zip.
+- **Vector editing (FreeForm)**: a pen tool (P) for paths with corner and smooth points; point editing (double-click a path or press Enter) with handle dragging, inserting and deleting points, and snapping; groups (Ctrl/⌘+G, Ctrl/⌘+Shift+G) that nest inside frames and each other; Flatten / convert to path (Ctrl/⌘+E), Outline stroke (Ctrl/⌘+Alt+O) and boolean operations (union, subtract, intersect, exclude) that keep curves; strokes with dashes, caps, joins and inside/outside alignment; and editable SVG import: drop, open or paste SVG markup from Figma or Illustrator and get paths, groups, gradients and text instead of a flat image. Copy as SVG (Ctrl/⌘+Shift+C) works the other way. Groups, converting to paths, booleans and point editing work in Default projects too.
 
 Everything else works in both:
 

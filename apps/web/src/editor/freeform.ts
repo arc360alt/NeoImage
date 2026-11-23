@@ -1,5 +1,6 @@
 import { getStage } from "./stage";
-import type { FrameLayer, Layer, ProjectDoc } from "./types";
+import { apply, compose } from "./matrix";
+import type { FrameLayer, GroupLayer, Layer, ProjectDoc } from "./types";
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
@@ -11,26 +12,42 @@ export function isFrame(layer: Layer | undefined): layer is FrameLayer {
 	return layer?.type === "frame";
 }
 
-/** Axis-aligned bounds of a layer in world space (uses the live node when available). */
-export function layerBounds(layer: Layer): Rect {
+/**
+ * Axis-aligned bounds of a layer in world space (uses the live node when available).
+ * Groups have no box of their own; without a canvas, pass `layers` so their
+ * children can be measured.
+ */
+export function layerBounds(layer: Layer, layers?: Layer[]): Rect {
 	const stage = getStage();
 	const group = stage?.findOne(".content-group");
 	const node = stage?.findOne(`#${layer.id}`);
 	if (node && group) {
 		return node.getClientRect({ relativeTo: group as never, skipShadow: true });
 	}
+	if (layer.type === "group") {
+		const all = layers ?? [];
+		const leaves = descendantsOf(all, layer.id).filter((l) => l.type !== "group" && l.visible);
+		return unionBounds(leaves.map((l) => layerBounds(l, all))) ?? { x: 0, y: 0, width: 0, height: 0 };
+	}
 	const height =
 		layer.type === "text"
 			? layer.fontSize * layer.lineHeight * Math.max(1, layer.text.split("\n").length)
-			: Math.max(layer.height, 1);
-	const w = layer.width * layer.scaleX;
-	const h = height * layer.scaleY;
-	return {
-		x: Math.min(layer.x, layer.x + w),
-		y: Math.min(layer.y, layer.y + h),
-		width: Math.abs(w),
-		height: Math.abs(h),
-	};
+			: layer.type === "path"
+				? layer.height
+				: Math.max(layer.height, 1);
+	// Without a live node, use the layer's (possibly rotated) box.
+	const m = compose(layer);
+	const corners = [
+		{ x: 0, y: 0 },
+		{ x: layer.width, y: 0 },
+		{ x: layer.width, y: height },
+		{ x: 0, y: height },
+	].map((p) => apply(m, p));
+	const xs = corners.map((p) => p.x);
+	const ys = corners.map((p) => p.y);
+	const x = Math.min(...xs);
+	const y = Math.min(...ys);
+	return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
 }
 
 export function frameRect(frame: FrameLayer): Rect {
@@ -69,14 +86,70 @@ export function frameAt(
 	return undefined;
 }
 
-export function childrenOf(layers: Layer[], frameId: string) {
-	return layers.filter((l) => l.parentId === frameId);
+export function isGroup(layer: Layer | undefined): layer is GroupLayer {
+	return layer?.type === "group";
+}
+
+/** Direct children of a frame or group. */
+export function childrenOf(layers: Layer[], parentId: string) {
+	return layers.filter((l) => l.parentId === parentId);
+}
+
+/** Children, grandchildren, … of a frame or group (cycle-safe). */
+export function descendantsOf(layers: Layer[], id: string): Layer[] {
+	const out: Layer[] = [];
+	const seen = new Set([id]);
+	const queue = [id];
+	while (queue.length > 0) {
+		const current = queue.shift() as string;
+		for (const l of layers) {
+			if (l.parentId === current && !seen.has(l.id)) {
+				seen.add(l.id);
+				out.push(l);
+				queue.push(l.id);
+			}
+		}
+	}
+	return out;
+}
+
+/** The parent chain of a layer, nearest first (cycle-safe; ignores missing parents). */
+export function ancestorsOf(layers: Layer[], id: string): Layer[] {
+	const byId = new Map(layers.map((l) => [l.id, l]));
+	const out: Layer[] = [];
+	const seen = new Set([id]);
+	let parentId = byId.get(id)?.parentId;
+	while (parentId && !seen.has(parentId)) {
+		const parent = byId.get(parentId);
+		if (!parent) break;
+		out.push(parent);
+		seen.add(parentId);
+		parentId = parent.parentId;
+	}
+	return out;
+}
+
+/** The frame a layer lives in, through any number of groups. */
+export function frameOf(layers: Layer[], layer: Layer): FrameLayer | undefined {
+	if (layer.type === "frame") return layer;
+	return ancestorsOf(layers, layer.id).find(isFrame);
+}
+
+/** True when `id` is `ancestorId` or sits somewhere inside it. */
+export function isInside(layers: Layer[], id: string, ancestorId: string) {
+	return id === ancestorId || ancestorsOf(layers, id).some((l) => l.id === ancestorId);
+}
+
+/** Selected ids minus those whose ancestor is selected too (they move with it). */
+export function topmostIds(layers: Layer[], ids: string[]) {
+	const set = new Set(ids);
+	return ids.filter((id) => !ancestorsOf(layers, id).some((a) => set.has(a.id)));
 }
 
 /** Which frame should a layer belong to, based on where its center sits. */
 export function parentFor(layers: Layer[], layer: Layer): string | undefined {
 	if (layer.type === "frame") return undefined;
-	const b = layerBounds(layer);
+	const b = layerBounds(layer, layers);
 	return frameAt(layers, { x: b.x + b.width / 2, y: b.y + b.height / 2 }, new Set([layer.id]))?.id;
 }
 
@@ -90,7 +163,7 @@ export function unionBounds(rects: Rect[]): Rect | null {
 }
 
 export function contentBounds(layers: Layer[]): Rect | null {
-	return unionBounds(layers.filter((l) => l.visible && !l.parentId).map(layerBounds));
+	return unionBounds(layers.filter((l) => l.visible && !l.parentId).map((l) => layerBounds(l, layers)));
 }
 
 /** The visible part of the infinite canvas, in world coordinates. */

@@ -1,6 +1,7 @@
 import { getEditor } from "./store";
 import {
 	frameAt,
+	frameOf,
 	frameRect,
 	isFreeform,
 	type Rect,
@@ -25,8 +26,7 @@ export function getInsertionArea(): InsertionArea {
 	const byId = new Map(doc.layers.map((l) => [l.id, l]));
 	for (const id of selectedIds) {
 		const layer = byId.get(id);
-		const frame =
-			layer?.type === "frame" ? layer : layer?.parentId ? byId.get(layer.parentId) : undefined;
+		const frame = layer ? frameOf(doc.layers, layer) : undefined;
 		if (frame?.type === "frame") return { ...frameRect(frame), frame };
 	}
 	const view = viewportRect();

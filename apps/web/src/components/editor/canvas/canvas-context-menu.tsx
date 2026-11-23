@@ -22,6 +22,14 @@ import {
 	FullScreenIcon,
 	SquareArrowExpand01Icon,
 	Cancel01Icon,
+	GroupItemsIcon,
+	PathIcon,
+	SourceCodeIcon,
+	PathfinderOutlineIcon,
+	PathfinderUniteIcon,
+	PathfinderMinusFrontIcon,
+	PathfinderIntersectIcon,
+	PathfinderExcludeIcon,
 } from "@hugeicons/core-free-icons";
 import {
 	ContextMenu,
@@ -49,6 +57,9 @@ import {
 	zoomToSelection,
 } from "@/editor/frame-actions";
 import type { ActionId } from "@/editor/keybindings";
+import { groupSelection, ungroupSelection } from "@/editor/group-actions";
+import { copySelection, copySelectionAsSvg, cutSelection } from "@/editor/clipboard";
+import { booleanSelection, flattenSelection, outlineStrokeSelection, vectorTargets } from "@/editor/vector-actions";
 import { useShortcut } from "@/editor/use-shortcut";
 
 function Shortcut({ id }: { id: ActionId }) {
@@ -67,6 +78,9 @@ export function CanvasContextMenu({ children }: { children: React.ReactNode }) {
 	const hasFrames = selected.some((l) => l.type === "frame");
 	const hasNonFrames = selected.some((l) => l.type !== "frame");
 	const inFrame = selected.some((l) => l.parentId);
+	const hasGroups = selected.some((l) => l.type === "group");
+	const docLayers = useEditorStore((s) => s.doc?.layers);
+	const vectorCount = docLayers ? vectorTargets(docLayers, ids).vectors.length : 0;
 
 	return (
 		<ContextMenu>
@@ -96,17 +110,24 @@ export function CanvasContextMenu({ children }: { children: React.ReactNode }) {
 					<>
 						<ContextMenuItem
 							icon={<HugeiconsIcon icon={Copy01Icon} />}
-							onClick={() => getEditor().copy()}
+							onClick={copySelection}
 						>
 							Copy
 							<Shortcut id="edit.copy" />
 						</ContextMenuItem>
 						<ContextMenuItem
 							icon={<HugeiconsIcon icon={ScissorIcon} />}
-							onClick={() => getEditor().cut()}
+							onClick={cutSelection}
 						>
 							Cut
 							<Shortcut id="edit.cut" />
+						</ContextMenuItem>
+						<ContextMenuItem
+							icon={<HugeiconsIcon icon={SourceCodeIcon} />}
+							onClick={() => void copySelectionAsSvg()}
+						>
+							Copy as SVG
+							<Shortcut id="edit.copySvg" />
 						</ContextMenuItem>
 						<ContextMenuItem
 							disabled={!hasClipboard}
@@ -124,6 +145,59 @@ export function CanvasContextMenu({ children }: { children: React.ReactNode }) {
 							<Shortcut id="edit.duplicate" />
 						</ContextMenuItem>
 						<ContextMenuSeparator />
+						{hasNonFrames && (
+							<ContextMenuItem icon={<HugeiconsIcon icon={GroupItemsIcon} />} onClick={groupSelection}>
+								Group selection
+								<Shortcut id="arrange.group" />
+							</ContextMenuItem>
+						)}
+						{hasGroups && (
+							<ContextMenuItem icon={<HugeiconsIcon icon={GroupItemsIcon} />} onClick={ungroupSelection}>
+								Ungroup
+								<Shortcut id="arrange.ungroup" />
+							</ContextMenuItem>
+						)}
+						{vectorCount > 0 && (
+							<>
+								<ContextMenuItem icon={<HugeiconsIcon icon={PathIcon} />} onClick={() => flattenSelection()}>
+									{vectorCount === 1 && single?.type === "shape" ? "Convert to path" : "Flatten"}
+									<Shortcut id="vector.flatten" />
+								</ContextMenuItem>
+								<ContextMenuItem
+									icon={<HugeiconsIcon icon={PathfinderOutlineIcon} />}
+									onClick={() => void outlineStrokeSelection()}
+								>
+									Outline stroke
+									<Shortcut id="vector.outlineStroke" />
+								</ContextMenuItem>
+							</>
+						)}
+						{vectorCount >= 2 && (
+							<ContextMenuSub>
+								<ContextMenuSubTrigger icon={<HugeiconsIcon icon={PathfinderUniteIcon} />}>
+									Boolean
+								</ContextMenuSubTrigger>
+								<ContextMenuSubContent className="w-52">
+									<ContextMenuItem icon={<HugeiconsIcon icon={PathfinderUniteIcon} />} onClick={() => void booleanSelection("union")}>
+										Union
+										<Shortcut id="vector.union" />
+									</ContextMenuItem>
+									<ContextMenuItem icon={<HugeiconsIcon icon={PathfinderMinusFrontIcon} />} onClick={() => void booleanSelection("subtract")}>
+										Subtract
+										<Shortcut id="vector.subtract" />
+									</ContextMenuItem>
+									<ContextMenuItem icon={<HugeiconsIcon icon={PathfinderIntersectIcon} />} onClick={() => void booleanSelection("intersect")}>
+										Intersect
+										<Shortcut id="vector.intersect" />
+									</ContextMenuItem>
+									<ContextMenuItem icon={<HugeiconsIcon icon={PathfinderExcludeIcon} />} onClick={() => void booleanSelection("exclude")}>
+										Exclude
+										<Shortcut id="vector.exclude" />
+									</ContextMenuItem>
+								</ContextMenuSubContent>
+							</ContextMenuSub>
+						)}
+						{(hasNonFrames || hasGroups) && !freeform && <ContextMenuSeparator />}
 						{freeform && (
 							<>
 								{hasNonFrames && (
@@ -150,7 +224,7 @@ export function CanvasContextMenu({ children }: { children: React.ReactNode }) {
 										onClick={removeSelectedFrames}
 									>
 										Remove frame
-										<Shortcut id="frame.remove" />
+										<Shortcut id="arrange.ungroup" />
 									</ContextMenuItem>
 								)}
 								<ContextMenuItem

@@ -6,6 +6,7 @@ import {
 	PaintBrush02Icon,
 	TextIcon,
 	SecurityLockIcon,
+	PenTool03Icon,
 } from "@hugeicons/core-free-icons";
 
 const FEATURES = [
@@ -26,6 +27,12 @@ const FEATURES = [
 		title: "Design like Canva",
 		description:
 			"Templates for every social format, headings, stickers, shapes and gradient backgrounds.",
+	},
+	{
+		icon: PenTool03Icon,
+		title: "Vectors, like Illustrator",
+		description:
+			"Pen tool and editable paths, groups, boolean operations, outline stroke, and SVG files that import as editable layers.",
 	},
 	{
 		icon: PaintBrush02Icon,

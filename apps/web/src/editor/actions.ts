@@ -5,6 +5,7 @@ import type { Fill, ImageLayer, Layer } from "./types";
 import { getStage } from "./stage";
 import { getInsertionArea } from "./insertion";
 import { isFreeform } from "./freeform";
+import { flipGroup } from "./group-actions";
 
 /** Adds a text layer centered on the artboard. */
 export function addText(init: Partial<Parameters<typeof createTextLayer>[0]> = {}) {
@@ -85,7 +86,14 @@ export function startCrop() {
 export function flipSelection(axis: "x" | "y") {
 	const { doc, selectedIds, updateLayers } = getEditor();
 	if (!doc) return;
-	const layers = doc.layers.filter((l) => selectedIds.includes(l.id) && !l.locked);
+	// Groups flip their contents around the group's center.
+	for (const group of doc.layers.filter((l) => l.type === "group" && selectedIds.includes(l.id) && !l.locked)) {
+		flipGroup(group.id, axis);
+	}
+	const layers = doc.layers.filter(
+		(l) => selectedIds.includes(l.id) && !l.locked && l.type !== "group",
+	);
+	if (layers.length === 0) return;
 	updateLayers(
 		layers.map((layer) => {
 			// Flip around the layer's visual center so it stays in place.

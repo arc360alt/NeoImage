@@ -27,10 +27,13 @@ const nextConfig: NextConfig = {
 	turbopack: {
 		resolveAlias: {
 			canvas: { browser: "./src/utils/empty-module.ts" },
+			// paper.js (vector booleans) only runs in the browser; its Node build wants jsdom.
+			jsdom: "./src/utils/empty-module.ts",
+			"jsdom/lib/jsdom/living/generated/utils": "./src/utils/empty-module.ts",
 		},
 	},
 	webpack: (config) => {
-		config.externals = [...(config.externals || []), { canvas: "canvas" }];
+		config.externals = [...(config.externals || []), { canvas: "canvas", jsdom: "jsdom" }];
 		return config;
 	},
 	images: {

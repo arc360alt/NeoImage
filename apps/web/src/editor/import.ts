@@ -3,6 +3,7 @@ import { addAsset, isSupportedImage } from "@/storage/assets";
 import { createImageLayer } from "./defaults";
 import { getEditor } from "./store";
 import { centerIn, getInsertionArea } from "./insertion";
+import { importSvgMarkup, isSvgFile } from "./svg-import";
 import type { AssetMeta } from "./types";
 
 /** Size an image so it fits nicely inside the artboard. */
@@ -45,7 +46,15 @@ export async function importImageBlobs(
 		return [];
 	}
 	const results: AssetMeta[] = [];
+	const freeform = getEditor().doc?.mode === "freeform";
 	for (const file of images) {
+		// FreeForm opens SVG files as editable vector layers; Default mode keeps them as images.
+		if (freeform && options.addToCanvas && isSvgFile(file)) {
+			const name = file instanceof File ? file.name.replace(/\.svg$/i, "") : "SVG";
+			const ok = await importSvgMarkup(await file.text(), { name, position: options.position });
+			if (ok) continue;
+			toast.info("This SVG couldn't be converted to editable layers, so it was added as an image");
+		}
 		try {
 			const name = file instanceof File ? file.name : "Pasted image";
 			const asset = await addAsset({ projectId, blob: file, name });

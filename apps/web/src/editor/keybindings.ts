@@ -14,6 +14,7 @@ export type ActionGroup =
 	| "Frames"
 	| "Arrange"
 	| "Align"
+	| "Vector"
 	| "View";
 
 export type ActionId =
@@ -23,6 +24,7 @@ export type ActionId =
 	| "tool.rect"
 	| "tool.ellipse"
 	| "tool.line"
+	| "tool.pen"
 	| "tool.text"
 	| "tool.brush"
 	| "tool.eraser"
@@ -34,6 +36,7 @@ export type ActionId =
 	| "edit.redo"
 	| "edit.copy"
 	| "edit.cut"
+	| "edit.copySvg"
 	| "edit.paste"
 	| "edit.duplicate"
 	| "edit.delete"
@@ -47,6 +50,8 @@ export type ActionId =
 	| "frame.wrap"
 	| "frame.remove"
 	| "frame.fit"
+	| "arrange.group"
+	| "arrange.ungroup"
 	| "arrange.forward"
 	| "arrange.backward"
 	| "arrange.front"
@@ -61,6 +66,12 @@ export type ActionId =
 	| "align.bottom"
 	| "distribute.h"
 	| "distribute.v"
+	| "vector.flatten"
+	| "vector.outlineStroke"
+	| "vector.union"
+	| "vector.subtract"
+	| "vector.intersect"
+	| "vector.exclude"
 	| "view.zoomIn"
 	| "view.zoomOut"
 	| "view.zoomFit"
@@ -90,6 +101,7 @@ export const ACTIONS: ActionDef[] = [
 	{ id: "tool.rect", label: "Rectangle tool", group: "Tools", defaults: ["R"] },
 	{ id: "tool.ellipse", label: "Ellipse tool", group: "Tools", defaults: ["O"] },
 	{ id: "tool.line", label: "Line tool", group: "Tools", defaults: ["L"] },
+	{ id: "tool.pen", label: "Pen tool", group: "Tools", defaults: ["P"], freeformOnly: true },
 	{ id: "tool.text", label: "Text tool", group: "Tools", defaults: ["T"] },
 	{ id: "tool.brush", label: "Brush", group: "Tools", defaults: ["B"] },
 	{ id: "tool.eraser", label: "Eraser", group: "Tools", defaults: ["E"] },
@@ -102,7 +114,8 @@ export const ACTIONS: ActionDef[] = [
 	{ id: "edit.redo", label: "Redo", group: "Edit", defaults: ["Mod+Shift+Z", "Mod+Y"] },
 	{ id: "edit.copy", label: "Copy", group: "Edit", defaults: ["Mod+C"] },
 	{ id: "edit.cut", label: "Cut", group: "Edit", defaults: ["Mod+X"] },
-	{ id: "edit.paste", label: "Paste layers or images", group: "Edit", defaults: ["Mod+V"], fixed: true },
+	{ id: "edit.copySvg", label: "Copy as SVG", group: "Edit", defaults: ["Mod+Shift+C"] },
+	{ id: "edit.paste", label: "Paste layers, images or SVG", group: "Edit", defaults: ["Mod+V"], fixed: true },
 	{ id: "edit.duplicate", label: "Duplicate", group: "Edit", defaults: ["Mod+D"] },
 	{ id: "edit.delete", label: "Delete", group: "Edit", defaults: ["Delete", "Backspace"] },
 	{ id: "edit.flipH", label: "Flip horizontal", group: "Edit", defaults: ["Shift+H"] },
@@ -111,13 +124,16 @@ export const ACTIONS: ActionDef[] = [
 
 	{ id: "select.all", label: "Select all", group: "Selection", defaults: ["Mod+A"] },
 	{ id: "select.none", label: "Deselect / cancel", group: "Selection", defaults: ["Escape"], fixed: true },
-	{ id: "select.children", label: "Select frame contents", group: "Selection", defaults: ["Enter"], freeformOnly: true },
-	{ id: "select.parent", label: "Select parent frame", group: "Selection", defaults: ["Shift+Enter", "\\"], freeformOnly: true },
+	{ id: "select.children", label: "Select contents / edit path or text", group: "Selection", defaults: ["Enter"] },
+	{ id: "select.parent", label: "Select parent frame or group", group: "Selection", defaults: ["Shift+Enter", "\\"] },
 
 	{ id: "frame.wrap", label: "Frame selection", group: "Frames", defaults: ["Mod+Alt+G"], freeformOnly: true },
-	{ id: "frame.remove", label: "Remove frame (keep contents)", group: "Frames", defaults: ["Mod+Shift+G"], freeformOnly: true },
+	// Mod+Shift+G is "Ungroup", which also removes frames (like Figma).
+	{ id: "frame.remove", label: "Remove frame (keep contents)", group: "Frames", defaults: [], freeformOnly: true },
 	{ id: "frame.fit", label: "Resize frame to fit contents", group: "Frames", defaults: ["Mod+Alt+Shift+R"], freeformOnly: true },
 
+	{ id: "arrange.group", label: "Group selection", group: "Arrange", defaults: ["Mod+G"] },
+	{ id: "arrange.ungroup", label: "Ungroup / remove frame", group: "Arrange", defaults: ["Mod+Shift+G"] },
 	{ id: "arrange.forward", label: "Bring forward", group: "Arrange", defaults: ["Mod+]"] },
 	{ id: "arrange.backward", label: "Send backward", group: "Arrange", defaults: ["Mod+["] },
 	{ id: "arrange.front", label: "Bring to front", group: "Arrange", defaults: ["Mod+Shift+]"] },
@@ -134,6 +150,13 @@ export const ACTIONS: ActionDef[] = [
 	{ id: "distribute.h", label: "Distribute horizontally", group: "Align", defaults: ["Alt+Shift+H"] },
 	{ id: "distribute.v", label: "Distribute vertically", group: "Align", defaults: ["Alt+Shift+V"] },
 
+	{ id: "vector.flatten", label: "Flatten / convert to path (else Export)", group: "Vector", defaults: ["Mod+E"] },
+	{ id: "vector.outlineStroke", label: "Outline stroke", group: "Vector", defaults: ["Mod+Alt+O"] },
+	{ id: "vector.union", label: "Union selection", group: "Vector", defaults: ["Alt+Shift+U"] },
+	{ id: "vector.subtract", label: "Subtract selection", group: "Vector", defaults: ["Alt+Shift+S"] },
+	{ id: "vector.intersect", label: "Intersect selection", group: "Vector", defaults: ["Alt+Shift+I"] },
+	{ id: "vector.exclude", label: "Exclude selection", group: "Vector", defaults: ["Alt+Shift+E"] },
+
 	{ id: "view.zoomIn", label: "Zoom in", group: "View", defaults: ["Mod+=", "Mod+Shift+="] },
 	{ id: "view.zoomOut", label: "Zoom out", group: "View", defaults: ["Mod+-"] },
 	{ id: "view.zoomFit", label: "Zoom to fit", group: "View", defaults: ["Shift+1", "Mod+0"] },
@@ -141,7 +164,8 @@ export const ACTIONS: ActionDef[] = [
 	{ id: "view.zoomSelection", label: "Zoom to selection", group: "View", defaults: ["Shift+2"] },
 	{ id: "view.pixelGrid", label: "Toggle pixel grid", group: "View", defaults: ["Shift+'"] },
 	{ id: "view.layoutGrids", label: "Toggle layout grids", group: "View", defaults: ["Shift+G"], freeformOnly: true },
-	{ id: "view.export", label: "Export", group: "View", defaults: ["Mod+E", "Mod+Shift+E"] },
+	// Mod+E is Flatten (Figma); it still opens Export when there's nothing to flatten.
+	{ id: "view.export", label: "Export", group: "View", defaults: ["Mod+Shift+E"] },
 	{ id: "view.settings", label: "Settings", group: "View", defaults: ["Mod+,"] },
 	{ id: "view.shortcuts", label: "Keyboard shortcuts", group: "View", defaults: ["Mod+/"] },
 ];
@@ -153,6 +177,7 @@ export const ACTION_GROUPS: ActionGroup[] = [
 	"Frames",
 	"Arrange",
 	"Align",
+	"Vector",
 	"View",
 ];
 
